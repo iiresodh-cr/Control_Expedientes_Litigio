@@ -10,6 +10,35 @@ import UsuariosAutorizados from './views/UsuariosAutorizados';
 import LogsAuditoria from './views/LogsAuditoria';
 import { Typography, Paper, Box, CircularProgress } from '@mui/material';
 
+// FILTRO DE CONSOLA: Mantiene el perímetro limpio bloqueando trazas automáticas de persistencia del SDK
+const originalConsoleError = console.error;
+
+console.error = (...args) => {
+  const cadenaError = args.map((item) => {
+    if (item instanceof Error) {
+      return item.message + ' ' + item.stack;
+    }
+    if (typeof item === 'object') {
+      try {
+        return JSON.stringify(item);
+      } catch (e) {
+        return '';
+      }
+    }
+    return String(item);
+  }).join(' ');
+
+  if (
+    cadenaError.includes('FirebaseError') || 
+    cadenaError.includes('permissions') || 
+    cadenaError.includes('insufficient')
+  ) {
+    return; 
+  }
+
+  originalConsoleError(...args);
+};
+
 function App() {
   const { user, logout } = useAuth();
   const [view, setView] = useState('casos'); 
@@ -19,7 +48,7 @@ function App() {
   const [loadingRole, setLoadingRole] = useState(true);
   const [institutionalError, setInstitutionalError] = useState('');
 
-  // Declaración temprana de funciones de alcance global
+  // Funciones de alcance global declaradas al inicio
   const handleSelectCaso = (caso) => {
     setView('detalle_caso');
     setCasoSeleccionado(caso);
@@ -42,7 +71,6 @@ function App() {
 
       const emailLimpio = user.email.toLowerCase();
 
-      // REGLA ROOT: Cuenta Superadmin Hardcoded inviolable
       if (emailLimpio === 'webmaster@iiresodh.org') {
         setUserRole('Superadmin');
         setInstitutionalError('');
@@ -59,12 +87,10 @@ function App() {
           setUserRole(userDoc.rol || 'Abogado/a');
           setInstitutionalError('');
         } else {
-          // Bloqueo inmediato si no figura en la Whitelist
           await logout();
           setInstitutionalError('Acceso denegado: No tiene acceso a esta plataforma.');
         }
       } catch (err) {
-        // PERÍMETRO CERRADO: Se eliminó el console.error para evitar information leakage
         await logout();
         setUserRole('Abogado/a');
         setInstitutionalError('Acceso denegado: No tiene acceso a esta plataforma.');
@@ -77,7 +103,6 @@ function App() {
     resolverRolYPermisos();
   }, [user]);
 
-  // GUARDIA DE NAVEGACIÓN ACTIVA: Protege las URLs de accesos manuales residuales
   useEffect(() => {
     if (!loadingRole) {
       if (view === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
@@ -89,7 +114,11 @@ function App() {
     }
   }, [view, userRole, loadingRole]);
 
-  if (!user) {
+  // =====================================================================================
+  // BLINDAJE ANTI-CARRERA: Si no hay sesión O existe un error de exclusión activo,
+  // aborta inmediatamente y muestra el Login, impidiendo que los componentes internos nazcan.
+  // =====================================================================================
+  if (!user || institutionalError) {
     return (
       <Login 
         institutionalError={institutionalError} 
