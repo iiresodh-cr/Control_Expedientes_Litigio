@@ -25,14 +25,22 @@ function App() {
         return;
       }
 
+      // =====================================================================================
+      // CONTROL DE ENTRADA: Forzar reinicio inmediato a la página de Casos para todo rol
+      // =====================================================================================
+      setView('casos');
+      setCasoSeleccionado(null);
+
       const emailLimpio = user.email.toLowerCase();
 
+      // REGLA ROOT: Cuenta Superadmin Hardcoded inviolable
       if (emailLimpio === 'webmaster@iiresodh.org') {
         setUserRole('Superadmin');
         setLoadingRole(false);
         return;
       }
 
+      // REGLA ENTERPRISE: Búsqueda directa por ID de documento (Email)
       try {
         const userDocRef = doc(db, 'usuarios_autorizados', emailLimpio);
         const userDocSnap = await getDoc(userDocRef);
@@ -41,6 +49,7 @@ function App() {
           const userDoc = userDocSnap.data();
           setUserRole(userDoc.rol || 'Abogado/a');
         } else {
+          // Si está autenticado en Google pero no pre-autorizado en la whitelist, hereda rol restrictivo
           setUserRole('Abogado/a');
         }
       } catch (err) {
@@ -55,11 +64,16 @@ function App() {
     resolverRolYPermisos();
   }, [user]);
 
+  // =====================================================================================
+  // CAPA 1: GUARDIA DE NAVEGACIÓN ACTIVA (Expulsa usuarios no autorizados de vistas críticas)
+  // =====================================================================================
   useEffect(() => {
     if (!loadingRole) {
+      // Si cae en usuarios y no es Admin/Superadmin, forzar redirección a casos
       if (view === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
         setView('casos');
       }
+      // Si cae en logs y no es el Superadmin root, forzar redirección a casos
       if (view === 'logs' && userRole !== 'Superadmin') {
         setView('casos');
       }
@@ -88,6 +102,9 @@ function App() {
     setCasoSeleccionado(null);
   };
 
+  // =====================================================================================
+  // CAPA 2: SANITIZACIÓN DEL RENDER (Intercepta e impide renderizado ilegal)
+  // =====================================================================================
   let vistaSegura = view;
   if (vistaSegura === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
     vistaSegura = 'casos';
