@@ -28,10 +28,24 @@ function App() {
   
   const [userRole, setUserRole] = useState('Abogado/a'); 
   const [loadingRole, setLoadingRole] = useState(true);
-  
-  // NUEVO ESTADO: Control perimetral para usuarios autenticados pero no autorizados
   const [openUnauthorizedModal, setOpenUnauthorizedModal] = useState(false);
 
+  // =====================================================================================
+  // CORRECCIÓN CRÍTICA: Funciones declaradas al inicio para evitar la zona muerta de alcance
+  // =====================================================================================
+  const handleSelectCaso = (caso) => {
+    setView('detalle_caso');
+    setCasoSeleccionado(caso);
+  };
+
+  const handleVolverCasos = () => {
+    setView('casos');
+    setCasoSeleccionado(null);
+  };
+
+  // =====================================================================================
+  // EFECTOS DE CONTROL DE FLUJO Y ROL
+  // =====================================================================================
   useEffect(() => {
     const resolverRolYPermisos = async () => {
       if (!user) {
@@ -39,13 +53,13 @@ function App() {
         return;
       }
 
-      // CONTROL DE ENTRADA: Forzar reinicio de vistas preventivo
+      // Control preventivo: Forzar reinicio de vistas al detectar cambio de usuario
       setView('casos');
       setCasoSeleccionado(null);
 
       const emailLimpio = user.email.toLowerCase();
 
-      // REGLA ROOT: Cuenta Superadmin Hardcoded inviolable
+      // REGLA ROOT: Cuenta Superadmin Hardcoded
       if (emailLimpio === 'webmaster@iiresodh.org') {
         setUserRole('Superadmin');
         setLoadingRole(false);
@@ -62,7 +76,7 @@ function App() {
           setUserRole(userDoc.rol || 'Abogado/a');
           setOpenUnauthorizedModal(false);
         } else {
-          // INTERCEPCIÓN COHERENTE: El usuario se logueó en Google pero no está en la Whitelist
+          // Intercepción perimetral si el correo no figura en la Whitelist
           setOpenUnauthorizedModal(true);
         }
       } catch (err) {
@@ -77,7 +91,6 @@ function App() {
     resolverRolYPermisos();
   }, [user]);
 
-  // CAPA 1: GUARDIA DE NAVEGACIÓN ACTIVA (Expulsa usuarios no autorizados de vistas críticas)
   useEffect(() => {
     if (!loadingRole) {
       if (view === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
@@ -89,21 +102,28 @@ function App() {
     }
   }, [view, userRole, loadingRole]);
 
+  // =====================================================================================
+  // SECCIÓN DE SALIDAS PREVENTIVAS (Ubicadas correctamente tras declarar las funciones)
+  // =====================================================================================
   if (!user) {
     return <Login />;
   }
 
   if (loadingRole) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          minHeight: '100vh' 
+        }}
+      >
         <CircularProgress />
       </Box>
     );
   }
 
-  // =====================================================================================
-  // INTERCEPCIÓN CRÍTICA: Renderizado del Bloqueo Perimetral de Acceso
-  // =====================================================================================
   if (openUnauthorizedModal) {
     return (
       <Box 
@@ -175,7 +195,6 @@ function App() {
               variant="contained"
               color="error"
               onClick={async () => {
-                // Deslogueo físico en Firebase para limpiar el token residual del navegador
                 await logout();
                 setOpenUnauthorizedModal(false);
               }}
@@ -193,7 +212,9 @@ function App() {
     );
   }
 
-  // CAPA 2: SANITIZACIÓN DEL RENDER REGULAR (Para personal con acceso aprobado)
+  // =====================================================================================
+  // RENDERIZADO SEGURO DE LA APLICACIÓN
+  // =====================================================================================
   let vistaSegura = view;
   if (vistaSegura === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
     vistaSegura = 'casos';
