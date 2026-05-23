@@ -8,15 +8,29 @@ import Casos from './views/Casos';
 import DetalleCaso from './views/DetalleCaso';
 import UsuariosAutorizados from './views/UsuariosAutorizados';
 import LogsAuditoria from './views/LogsAuditoria';
-import { Typography, Paper, Box, CircularProgress } from '@mui/material';
+import { 
+  Typography, 
+  Paper, 
+  Box, 
+  CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button
+} from '@mui/material';
+import { ShieldAlert } from 'lucide-react';
 
 function App() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [view, setView] = useState('casos'); 
   const [casoSeleccionado, setCasoSeleccionado] = useState(null);
   
   const [userRole, setUserRole] = useState('Abogado/a'); 
   const [loadingRole, setLoadingRole] = useState(true);
+  
+  // NUEVO ESTADO: Control perimetral para usuarios autenticados pero no autorizados
+  const [openUnauthorizedModal, setOpenUnauthorizedModal] = useState(false);
 
   useEffect(() => {
     const resolverRolYPermisos = async () => {
@@ -25,9 +39,7 @@ function App() {
         return;
       }
 
-      // =====================================================================================
-      // CONTROL DE ENTRADA: Forzar reinicio inmediato a la página de Casos para todo rol
-      // =====================================================================================
+      // CONTROL DE ENTRADA: Forzar reinicio de vistas preventivo
       setView('casos');
       setCasoSeleccionado(null);
 
@@ -48,9 +60,10 @@ function App() {
         if (userDocSnap.exists()) {
           const userDoc = userDocSnap.data();
           setUserRole(userDoc.rol || 'Abogado/a');
+          setOpenUnauthorizedModal(false);
         } else {
-          // Si está autenticado en Google pero no pre-autorizado en la whitelist, hereda rol restrictivo
-          setUserRole('Abogado/a');
+          // INTERCEPCIÓN COHERENTE: El usuario se logueó en Google pero no está en la Whitelist
+          setOpenUnauthorizedModal(true);
         }
       } catch (err) {
         console.error('Error crítico resolviendo roles en Firebase:', err);
@@ -64,16 +77,12 @@ function App() {
     resolverRolYPermisos();
   }, [user]);
 
-  // =====================================================================================
   // CAPA 1: GUARDIA DE NAVEGACIÓN ACTIVA (Expulsa usuarios no autorizados de vistas críticas)
-  // =====================================================================================
   useEffect(() => {
     if (!loadingRole) {
-      // Si cae en usuarios y no es Admin/Superadmin, forzar redirección a casos
       if (view === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
         setView('casos');
       }
-      // Si cae en logs y no es el Superadmin root, forzar redirección a casos
       if (view === 'logs' && userRole !== 'Superadmin') {
         setView('casos');
       }
@@ -92,19 +101,99 @@ function App() {
     );
   }
 
-  const handleSelectCaso = (caso) => {
-    setView('detalle_caso');
-    setCasoSeleccionado(caso);
-  };
-
-  const handleVolverCasos = () => {
-    setView('casos');
-    setCasoSeleccionado(null);
-  };
-
   // =====================================================================================
-  // CAPA 2: SANITIZACIÓN DEL RENDER (Intercepta e impide renderizado ilegal)
+  // INTERCEPCIÓN CRÍTICA: Renderizado del Bloqueo Perimetral de Acceso
   // =====================================================================================
+  if (openUnauthorizedModal) {
+    return (
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          minHeight: '100vh', 
+          bgcolor: '#f8fafc' 
+        }}
+      >
+        <Dialog
+          open={openUnauthorizedModal}
+          fullWidth
+          maxWidth="xs"
+          slotProps={{ 
+            paper: { 
+              sx: { 
+                borderRadius: 3, 
+                border: '2px solid #ef4444',
+                p: 1
+              } 
+            } 
+          }}
+        >
+          <DialogTitle 
+            sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 1.5, 
+              color: '#b91c1c', 
+              fontWeight: 'bold' 
+            }}
+          >
+            <ShieldAlert size={26} />
+            Acceso Denegado
+          </DialogTitle>
+          
+          <DialogContent dividers>
+            <Typography variant="body2" color="text.primary" gutterBottom>
+              La cuenta de correo institucional con la que acaba de autenticarse no se encuentra registrada en el sistema.
+            </Typography>
+            
+            <Box 
+              sx={{ 
+                bgcolor: '#fef2f2', 
+                p: 2, 
+                borderRadius: 2, 
+                my: 2, 
+                border: '1px solid #fee2e2' 
+              }}
+            >
+              <Typography variant="caption" display="block" color="#b91c1c" fontWeight="bold">
+                Usuario Identificado:
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                {user?.email}
+              </Typography>
+            </Box>
+
+            <Typography variant="caption" color="text.secondary" display="block">
+              Si usted pertenece al cuerpo de Abogados o personal Administrativo de IIRESODH, por favor solicite a la dirección o a un administrador del sistema que pre-autorice su cuenta de correo electrónico.
+            </Typography>
+          </DialogContent>
+
+          <DialogActions sx={{ p: 2 }}>
+            <Button
+              fullWidth
+              variant="contained"
+              color="error"
+              onClick={async () => {
+                // Deslogueo físico en Firebase para limpiar el token residual del navegador
+                await logout();
+                setOpenUnauthorizedModal(false);
+              }}
+              sx={{ 
+                textTransform: 'none', 
+                fontWeight: 'bold',
+                borderRadius: 2
+              }}
+            >
+              Entendido y Volver al Login
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Box>
+    );
+  }
+
+  // CAPA 2: SANITIZACIÓN DEL RENDER REGULAR (Para personal con acceso aprobado)
   let vistaSegura = view;
   if (vistaSegura === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
     vistaSegura = 'casos';
