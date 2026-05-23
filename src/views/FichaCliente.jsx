@@ -1,0 +1,464 @@
+import React, { useState, useEffect } from 'react';
+import { db, storage } from '../config/firebase';
+import { 
+  doc, 
+  getDoc, 
+  updateDoc, 
+  collection, 
+  addDoc, 
+  getDocs, 
+  query, 
+  orderBy, 
+  serverTimestamp, 
+  deleteDoc 
+} from 'firebase/firestore';
+import { 
+  ref, 
+  uploadBytesResumable, 
+  getDownloadURL, 
+  deleteObject 
+} from 'firebase/storage';
+import { 
+  Box, 
+  Button, 
+  Typography, 
+  Paper, 
+  TextField, 
+  Card, 
+  CardContent, 
+  CircularProgress, 
+  Alert, 
+  Divider, 
+  List, 
+  ListItem, 
+  ListItemText, 
+  LinearProgress, 
+  Chip, 
+  FormControl, 
+  InputLabel, 
+  Select, 
+  MenuItem, 
+  IconButton 
+} from '@mui/material';
+import { 
+  ArrowLeft, 
+  Save, 
+  User, 
+  CreditCard, 
+  StickyNote, 
+  Upload, 
+  File, 
+  Plus, 
+  Trash2 
+} from 'lucide-react';
+import { registrarLogAuditoria } from '../utils/auditLogger';
+
+const DOC_TYPES = [
+  'Cédula de Identidad', 
+  'DNI', 
+  'Pasaporte', 
+  'RUT', 
+  'Cédula de Residencia', 
+  'Otro'
+];
+
+const COUNTRIES = [
+  { code: 'CR', name: 'Costa Rica', phone: '+506' },
+  { code: 'US', name: 'Estados Unidos', phone: '+1' },
+  { code: 'MX', name: 'México', phone: '+52' },
+  { code: 'ES', name: 'España', phone: '+34' },
+  { code: 'CO', name: 'Colombia', phone: '+57' },
+  { code: 'AR', name: 'Argentina', phone: '+54' },
+  { code: 'CL', name: 'Chile', phone: '+56' },
+  { code: 'PE', name: 'Perú', phone: '+51' },
+  { code: 'EC', name: 'Ecuador', phone: '+593' },
+  { code: 'PA', name: 'Panamá', phone: '+507' },
+  { code: 'SV', name: 'El Salvador', phone: '+503' },
+  { code: 'GT', name: 'Guatemala', phone: '+502' },
+  { code: 'HN', name: 'Honduras', phone: '+504' },
+  { code: 'NI', name: 'Nicaragua', phone: '+505' },
+  { code: 'VE', name: 'Venezuela', phone: '+58' },
+  { code: 'UY', name: 'Uruguay', phone: '+598' },
+  { code: 'PY', name: 'Paraguay', phone: '+595' },
+  { code: 'BO', name: 'Bolivia', phone: '+591' },
+  { code: 'CA', name: 'Canadá', phone: '+1' },
+  { code: 'GB', name: 'Reino Unido', phone: '+44' },
+  { code: 'FR', name: 'Francia', phone: '+33' },
+  { code: 'DE', name: 'Alemania', phone: '+49' },
+  { code: 'IT', name: 'Italia', phone: '+39' }
+];
+
+export default function FichaCliente({ casoId, clienteId, onVolver, currentUserEmail }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const [cliente, setCliente] = useState(null);
+  const [nombres, setNombres] = useState('');
+  const [apellidos, setApellidos] = useState('');
+  const [tipoIdentificacion, setTipoIdentificacion] = useState('Cédula de Identidad');
+  const [identificacion, setIdentificacion] = useState('');
+  const [pais, setPais] = useState('Costa Rica');
+  const [direccion, setDireccion] = useState('');
+
+  const [correoPrincipal, setCorreoPrincipal] = useState('');
+  const [correoSecundario, setCorreoSecundario] = useState('');
+  const [codigoTelefonoPrincipal, setCodigoTelefonoPrincipal] = useState('+506');
+  const [telefonoPrincipal, setTelefonoPrincipal] = useState('');
+  const [codigoTelefonoSecundario, setCodigoTelefonoSecundario] = useState('+506');
+  const [telefonoSecundario, setTelefonoSecundario] = useState('');
+
+  const [notas, setNotas] = useState([]);
+  const [nuevaNota, setNuevaNota] = useState('');
+  const [documentos, setDocumentos] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  const clienteRef = doc(db, 'casos', casoId, 'clientes', clienteId);
+
+  const cargarDatosExpediente = async () => {
+    setLoading(true);
+    try {
+      const clienteSnap = await getDoc(clienteRef);
+      if (clienteSnap.exists()) {
+        const data = clienteSnap.data();
+        setCliente(data); 
+        setNombres(data.nombres || ''); 
+        setApellidos(data.apellidos || '');
+        setTipoIdentificacion(data.tipo_identificacion || 'Cédula de Identidad');
+        setIdentificacion(data.identificacion || ''); 
+        setPais(data.pais || 'Costa Rica'); 
+        setDireccion(data.direccion || '');
+        setCorreoPrincipal(data.correo_principal || data.correo || ''); 
+        setCorreoSecundario(data.correo_secundario || '');
+        setCodigoTelefonoPrincipal(data.codigo_telefono_principal || data.codigo_telefono || '+506');
+        setTelefonoPrincipal(data.telefono_principal || data.telefono || '');
+        setCodigoTelefonoSecundario(data.codigo_telefono_secundario || '+506'); 
+        setTelefonoSecundario(data.telefono_secundario || '');
+      }
+      
+      const snapshotNotas = await getDocs(query(collection(db, 'casos', casoId, 'clientes', clienteId, 'notas'), orderBy('fecha', 'desc')));
+      setNotas(snapshotNotas.docs.map(d => ({ id: d.id, ...d.data() })));
+
+      const snapshotDocs = await getDocs(query(collection(db, 'casos', casoId, 'clientes', clienteId, 'documentos'), orderBy('fecha_subida', 'desc')));
+      setDocumentos(snapshotDocs.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) { 
+      setError('Error al compilar el expediente.'); 
+    } finally { 
+      setLoading(false); 
+    }
+  };
+
+  useEffect(() => { 
+    cargarDatosExpediente(); 
+  }, [casoId, clienteId]);
+
+  const handleUpdateDatos = async (e) => {
+    e.preventDefault(); 
+    setError(''); 
+    setSuccess('');
+    try {
+      await updateDoc(clienteRef, {
+        nombres: nombres.trim(), 
+        apellidos: apellidos.trim(), 
+        tipo_identificacion: tipoIdentificacion,
+        identificacion: identificacion.trim(), 
+        pais: pais, 
+        direccion: direccion.trim(), 
+        correo_principal: correoPrincipal.trim(),
+        correo_secundario: correoSecundario.trim(), 
+        codigo_telefono_principal: codigoTelefonoPrincipal,
+        telefono_principal: telefonoPrincipal.trim(), 
+        codigo_telefono_secundario: codigoTelefonoSecundario, 
+        telefono_secundario: telefonoSecundario.trim()
+      });
+
+      await registrarLogAuditoria(
+        currentUserEmail, 
+        'Actualización de Cliente', 
+        `Se editaron los datos de contacto y demográficos del representado: ${apellidos.trim()}, ${nombres.trim()}`
+      );
+      
+      setSuccess('Expediente de contacto actualizado correctamente.');
+    } catch (err) { 
+      setError('No se pudieron guardar los cambios.'); 
+    }
+  };
+
+  const handleAddNota = async () => {
+    if (!nuevaNota.trim()) return;
+    try {
+      const refNotas = collection(db, 'casos', casoId, 'clientes', clienteId, 'notas');
+      await addDoc(refNotas, { 
+        texto: nuevaNota.trim(), 
+        fecha: serverTimestamp() 
+      });
+
+      await registrarLogAuditoria(
+        currentUserEmail, 
+        'Adición de Nota', 
+        `Se estampó una nota jurídica interna en el expediente del cliente: ${apellidos}, ${nombres}`
+      );
+
+      setNuevaNota('');
+      const snap = await getDocs(query(refNotas, orderBy('fecha', 'desc')));
+      setNotas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) { 
+      setError('Error al registrar la nota.'); 
+    }
+  };
+
+  const handleUploadFile = async (e) => {
+    const file = e.target.files[0]; 
+    if (!file) return;
+    
+    setUploading(true); 
+    setUploadProgress(0); 
+    setError('');
+
+    const storagePath = `casos/${casoId}/clientes/${clienteId}/${Date.now()}_${file.name}`;
+    const storageRef = ref(storage, storagePath);
+    const uploadTask = uploadBytesResumable(storageRef, file);
+
+    uploadTask.on('state_changed', 
+      (snap) => {
+        const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
+        setUploadProgress(Math.round(progress));
+      },
+      (err) => { 
+        setError('Error físico al subir archivo.'); 
+        setUploading(false); 
+      },
+      async () => {
+        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+        const refDocs = collection(db, 'casos', casoId, 'clientes', clienteId, 'documentos');
+        await addDoc(refDocs, { 
+          nombre: file.name, 
+          url: downloadURL, 
+          storage_path: storagePath, 
+          fecha_subida: new Date().toISOString() 
+        });
+
+        await registrarLogAuditoria(
+          currentUserEmail, 
+          'Carga de Poder/Doc', 
+          `Se cargó el archivo individual "${file.name}" en el expediente de: ${apellidos}, ${nombres}`
+        );
+
+        setUploading(false); 
+        setSuccess('Archivo enlazado con éxito.');
+        const snap = await getDocs(query(refDocs, orderBy('fecha_subida', 'desc')));
+        setDocumentos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      }
+    );
+  };
+
+  const handleDeleteFile = async (docId, storagePath) => {
+    if (!window.confirm('¿Desea suprimir este documento individual?')) return;
+    try {
+      if (storagePath) {
+        await deleteObject(ref(storage, storagePath));
+      }
+      await deleteDoc(doc(db, 'casos', casoId, 'clientes', clienteId, 'documentos', docId));
+
+      await registrarLogAuditoria(
+        currentUserEmail, 
+        'Eliminación de Poder/Doc', 
+        `Se eliminó el documento ID: ${docId} perteneciente a: ${apellidos}, ${nombres}`
+      );
+
+      setSuccess('Documento removido correctamente.');
+      const refDocs = collection(db, 'casos', casoId, 'clientes', clienteId, 'documentos');
+      const snap = await getDocs(query(refDocs, orderBy('fecha_subida', 'desc')));
+      setDocumentos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) { 
+      setError('Error al eliminar archivo.'); 
+    }
+  };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress /></Box>
+    );
+  }
+
+  return (
+    <Box>
+      <Button startIcon={<ArrowLeft size={16} />} onClick={onVolver} sx={{ mb: 3, textTransform: 'none' }}>
+        Volver al Expediente
+      </Button>
+      
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
+
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '3fr 2fr' }, gap: 3 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          
+          <Paper component="form" onSubmit={handleUpdateDatos} sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, color: 'primary.main' }}>
+              <User size={20} />
+              <Typography variant="h6" fontWeight="bold">Datos del Representado & Contacto</Typography>
+            </Box>
+            
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2.5 }}>
+              <TextField label="Nombres" fullWidth value={nombres} onChange={(e) => setNombres(e.target.value)} required />
+              <TextField label="Apellidos" fullWidth value={apellidos} onChange={(e) => setApellidos(e.target.value)} required />
+            </Box>
+            
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2.5 }}>
+              <FormControl fullWidth>
+                <InputLabel>Tipo Identificación</InputLabel>
+                <Select value={tipoIdentificacion} label="Tipo Identificación" onChange={(e) => setTipoIdentificacion(e.target.value)}>
+                  {DOC_TYPES.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <TextField label="Número de Identificación" fullWidth value={identificacion} onChange={(e) => setIdentificacion(e.target.value)} required />
+            </Box>
+            
+            <Box sx={{ mb: 2.5 }}>
+              <FormControl fullWidth>
+                <InputLabel>País de Residencia</InputLabel>
+                <Select 
+                  value={pais} 
+                  label="País de Residencia" 
+                  onChange={(e) => { 
+                    setPais(e.target.value); 
+                    const c = COUNTRIES.find(x => x.name === e.target.value); 
+                    if (c) { 
+                      setCodigoTelefonoPrincipal(c.phone); 
+                      setCodigoTelefonoSecundario(c.phone); 
+                    } 
+                  }}
+                >
+                  {COUNTRIES.map(c => <MenuItem key={c.code} value={c.name}>{c.name}</MenuItem>)}
+                </Select>
+              </FormControl>
+            </Box>
+            
+            <Box sx={{ mb: 2.5 }}>
+              <TextField label="Dirección Física Completa" fullWidth multiline rows={2} value={direccion} onChange={(e) => setDireccion(e.target.value)} />
+            </Box>
+            
+            <Divider sx={{ my: 2.5 }}>Direcciones de Correo</Divider>
+            
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2.5 }}>
+              <TextField label="Email Principal" type="email" fullWidth value={correoPrincipal} onChange={(e) => setCorreoPrincipal(e.target.value)} required />
+              <TextField label="Email Secundario" type="email" fullWidth value={correoSecundario} onChange={(e) => setCorreoSecundario(e.target.value)} />
+            </Box>
+            
+            <Divider sx={{ my: 2.5 }}>Números Telefónicos Internacionales</Divider>
+            
+            <Box sx={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 2, mb: 2.5 }}>
+              <FormControl fullWidth>
+                <InputLabel>Cód. Principal</InputLabel>
+                <Select value={codigoTelefonoPrincipal} label="Cód. Principal" onChange={(e) => setCodigoTelefonoPrincipal(e.target.value)}>
+                  {COUNTRIES.map(c => <MenuItem key={c.code} value={c.phone}>{`${c.code} (${c.phone})`}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <TextField label="Teléfono Principal" fullWidth value={telefonoPrincipal} onChange={(e) => setTelefonoPrincipal(e.target.value)} />
+            </Box>
+            
+            <Box sx={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 2, mb: 3 }}>
+              <FormControl fullWidth>
+                <InputLabel>Cód. Secundario</InputLabel>
+                <Select value={codigoTelefonoSecundario} label="Cód. Secundario" onChange={(e) => setCodigoTelefonoSecundario(e.target.value)}>
+                  {COUNTRIES.map(c => <MenuItem key={c.code} value={c.phone}>{`${c.code} (${c.phone})`}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <TextField label="Teléfono Secundario" fullWidth value={telefonoSecundario} onChange={(e) => setTelefonoSecundario(e.target.value)} />
+            </Box>
+            
+            <Button type="submit" variant="contained" startIcon={<Save size={16} />}>
+              Guardar Cambios del Expediente
+            </Button>
+          </Paper>
+
+          <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, color: 'primary.main' }}>
+              <StickyNote size={20} />
+              <Typography variant="h6" fontWeight="bold">Notas del Caso e Historial Jurídico</Typography>
+            </Box>
+            
+            <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
+              <TextField label="Escribe una actualización..." fullWidth multiline rows={2} value={nuevaNota} onChange={(e) => setNuevaNota(e.target.value)} />
+              <Button variant="outlined" onClick={handleAddNota} sx={{ minWidth: 48 }}>
+                <Plus size={20} />
+              </Button>
+            </Box>
+            
+            <List sx={{ maxHeight: 300, overflow: 'auto' }}>
+              {notas.length === 0 ? (
+                <Typography variant="body2" color="text.disabled">No hay notas.</Typography>
+              ) : (
+                notas.map((n) => (
+                  <Card key={n.id} sx={{ mb: 1.5, boxShadow: 'none', bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <CardContent sx={{ p: '12px !important' }}>
+                      <Typography variant="body2">{n.texto}</Typography>
+                      <Typography variant="caption" color="text.disabled" display="block">
+                        {n.fecha?.toDate ? n.fecha.toDate().toLocaleString() : 'Reciente'}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </List>
+          </Paper>
+        </Box>
+
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+          <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, color: 'primary.main' }}>
+              <CreditCard size={20} />
+              <Typography variant="h6" fontWeight="bold">Control de Pago</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#f8fafc', p: 2, borderRadius: 2 }}>
+              <Typography variant="body2" fontWeight="medium">Estado en Stripe:</Typography>
+              <Chip label={cliente?.estado_pago || 'Pendiente'} color={cliente?.estado_pago === 'Pagado' ? 'success' : 'warning'} sx={{ fontWeight: 'bold' }} />
+            </Box>
+          </Paper>
+
+          <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, color: 'primary.main' }}>
+              <File size={20} />
+              <Typography variant="h6" fontWeight="bold">Documentos y Poderes</Typography>
+            </Box>
+            
+            <Button variant="outlined" component="label" fullWidth startIcon={<Upload size={16} />} disabled={uploading}>
+              {uploading ? 'Subiendo...' : 'Subir Poder / Documento PDF'}
+              <input type="file" accept="application/pdf,image/*" hidden onChange={handleUploadFile} />
+            </Button>
+            
+            {uploading && (
+              <Box sx={{ p: 1 }}>
+                <LinearProgress variant="determinate" value={uploadProgress} />
+              </Box>
+            )}
+            
+            <Divider sx={{ my: 1.5 }} />
+            
+            <List>
+              {documentos.map((d) => (
+                <ListItem key={d.id} disablePadding sx={{ mb: 1, display: 'flex', gap: 1 }}>
+                  <Button 
+                    component="a" 
+                    href={d.url} 
+                    target="_blank" 
+                    variant="text" 
+                    color="inherit" 
+                    startIcon={<File size={16} />} 
+                    sx={{ flexGrow: 1, justifyContent: 'flex-start', p: 1, bgcolor: '#f8fafc', borderRadius: 1.5 }}
+                  >
+                    <ListItemText primary={d.nombre} secondary={d.fecha_subida ? new Date(d.fecha_subida).toLocaleDateString() : ''} />
+                  </Button>
+                  <IconButton size="small" color="error" onClick={() => handleDeleteFile(d.id, d.storage_path)} sx={{ border: '1px solid #fee2e2', bgcolor: '#fef2f2' }}>
+                    <Trash2 size={16} />
+                  </IconButton>
+                </ListItem>
+              ))}
+            </List>
+          </Paper>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
