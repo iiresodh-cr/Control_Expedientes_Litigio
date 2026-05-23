@@ -37,7 +37,6 @@ function App() {
         return;
       }
 
-      // Control preventivo: Limpiar expedientes activos ante cambios de sesión
       setView('casos');
       setCasoSeleccionado(null);
 
@@ -51,7 +50,6 @@ function App() {
         return;
       }
 
-      // Consulta directa por ID de documento (Email)
       try {
         const userDocRef = doc(db, 'usuarios_autorizados', emailLimpio);
         const userDocSnap = await getDoc(userDocRef);
@@ -61,14 +59,12 @@ function App() {
           setUserRole(userDoc.rol || 'Abogado/a');
           setInstitutionalError('');
         } else {
-          // INTERCEPCIÓN SECRETA: Fuera de la Whitelist, se corta el acceso sin dar explicaciones
+          // Bloqueo inmediato si no figura en la Whitelist
           await logout();
           setInstitutionalError('Acceso denegado: No tiene acceso a esta plataforma.');
         }
       } catch (err) {
-        console.error('Error interno de credenciales:', err);
-        
-        // Cierre de seguridad ante cualquier fallo o rechazo perimetral
+        // PERÍMETRO CERRADO: Se eliminó el console.error para evitar information leakage
         await logout();
         setUserRole('Abogado/a');
         setInstitutionalError('Acceso denegado: No tiene acceso a esta plataforma.');
@@ -93,7 +89,6 @@ function App() {
     }
   }, [view, userRole, loadingRole]);
 
-  // Renderizado condicional si no hay sesión activa
   if (!user) {
     return (
       <Login 
@@ -103,7 +98,6 @@ function App() {
     );
   }
 
-  // Pantalla de carga mientras se validan las llaves en el servidor
   if (loadingRole) {
     return (
       <Box 
@@ -119,7 +113,6 @@ function App() {
     );
   }
 
-  // Sanitización de vistas antes del renderizado
   let vistaSegura = view;
   if (vistaSegura === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
     vistaSegura = 'casos';
