@@ -17,11 +17,9 @@ function App() {
   
   const [userRole, setUserRole] = useState('Abogado/a'); 
   const [loadingRole, setLoadingRole] = useState(true);
-  
-  // NUEVO ESTADO: Almacena de forma segura los mensajes de rechazo perimetral de la whitelist
   const [institutionalError, setInstitutionalError] = useState('');
 
-  // Declaración temprana de funciones para evitar problemas de alcance en compilación de producción
+  // Declaración temprana de funciones de alcance global
   const handleSelectCaso = (caso) => {
     setView('detalle_caso');
     setCasoSeleccionado(caso);
@@ -39,13 +37,11 @@ function App() {
         return;
       }
 
-      // Control preventivo: Limpiar expedientes activos ante cambios de sesión
       setView('casos');
       setCasoSeleccionado(null);
 
       const emailLimpio = user.email.toLowerCase();
 
-      // REGLA ROOT: Cuenta Superadmin Hardcoded inviolable
       if (emailLimpio === 'webmaster@iiresodh.org') {
         setUserRole('Superadmin');
         setInstitutionalError('');
@@ -53,7 +49,6 @@ function App() {
         return;
       }
 
-      // REGLA ENTERPRISE: Búsqueda directa por ID de documento (Email)
       try {
         const userDocRef = doc(db, 'usuarios_autorizados', emailLimpio);
         const userDocSnap = await getDoc(userDocRef);
@@ -63,16 +58,20 @@ function App() {
           setUserRole(userDoc.rol || 'Abogado/a');
           setInstitutionalError('');
         } else {
-          // =====================================================================================
-          // INTERCEPCIÓN PERIMETRAL: El usuario no figura en la Whitelist institucional.
-          // Forzamos el deslogueo en Firebase y mandamos el mensaje directo a la vista de Login.
-          // =====================================================================================
+          // Si no está en la Whitelist, forzar expulsión inmediata
           await logout();
-          setInstitutionalError(`Acceso Denegado: La cuenta de correo ${user.email} no se encuentra registrada ni autorizada en el sistema.`);
+          setInstitutionalError(`Acceso Denegado: La cuenta ${user.email} no se encuentra pre-autorizada en el sistema.`);
         }
       } catch (err) {
-        console.error('Error crítico resolviendo roles en Firebase:', err);
-        setUserRole('Abogado/a');
+        console.error('Error de permisos atrapado en App.jsx:', err);
+        
+        // CORRECCIÓN CRÍTICA: Si Firestore arroja error de permisos, expulsamos al login con el mensaje explícito
+        await logout();
+        if (err.code === 'permission-denied') {
+          setInstitutionalError('Acceso Restringido: Las reglas de seguridad de Firestore rechazaron la consulta de validación de tu cuenta.');
+        } else {
+          setInstitutionalError(`Error del Servidor: No se pudieron validar tus credenciales de acceso (${err.message}).`);
+        }
       } finally {
         setLoadingRole(false);
       }
@@ -82,7 +81,6 @@ function App() {
     resolverRolYPermisos();
   }, [user]);
 
-  // GUARDIA DE NAVEGACIÓN ACTIVA: Protege las URLs internas de accesos residuales
   useEffect(() => {
     if (!loadingRole) {
       if (view === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
@@ -94,7 +92,7 @@ function App() {
     }
   }, [view, userRole, loadingRole]);
 
-  // SALIDA 1: Si no hay usuario activo, renderiza la pantalla de Login pasándole los errores institucionales
+  // Redirecciones de Renderizado según el estado de la sesión
   if (!user) {
     return (
       <Login 
@@ -104,23 +102,14 @@ function App() {
     );
   }
 
-  // SALIDA 2: Pantalla de transición mientras Firestore resuelve las credenciales del servidor
   if (loadingRole) {
     return (
-      <Box 
-        sx={{ 
-          display: 'flex', 
-          justifyContent: 'center', 
-          alignItems: 'center', 
-          minHeight: '100vh' 
-        }}
-      >
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
         <CircularProgress />
       </Box>
     );
   }
 
-  // SANITIZACIÓN FINAL DEL COMPONENTE DE RENDERIZADO
   let vistaSegura = view;
   if (vistaSegura === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
     vistaSegura = 'casos';

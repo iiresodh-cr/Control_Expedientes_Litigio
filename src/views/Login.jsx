@@ -20,7 +20,6 @@ export default function Login({ institutionalError, setInstitutionalError }) {
     setLoading(true);
     setLocalError('');
     
-    // Al presionar el botón limpiamos cualquier alerta previa para procesar la nueva transacción
     if (setInstitutionalError) {
       setInstitutionalError('');
     }
@@ -28,14 +27,19 @@ export default function Login({ institutionalError, setInstitutionalError }) {
     try {
       await loginWithGoogle();
     } catch (err) {
-      console.error(err);
-      setLocalError('Error de autenticación. Asegúrese de utilizar su cuenta de Google institucional autorizada.');
+      console.error('Error capturado en el botón de login:', err);
+      
+      // INTERCEPCIÓN DEL ERROR DE DOMINIO DE GOOGLE
+      if (err.code === 'auth/domain-not-allowed') {
+        setLocalError('Error de Configuración: Este dominio web no está autorizado en tu consola de Firebase. Ve a Authentication > Settings > Authorized Domains y añade esta URL.');
+      } else {
+        setLocalError('Error de autenticación. Asegúrese de utilizar su cuenta de Google institucional autorizada.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Conciliación de errores: prioriza el mensaje de denegación de la whitelist enviado por App.jsx
   const errorAMostrar = localError || institutionalError;
 
   return (
@@ -100,7 +104,7 @@ export default function Login({ institutionalError, setInstitutionalError }) {
             Acceso exclusivo para personal legal y administrativo de IIRESODH.
           </Typography>
 
-          {/* ALERTA UNIFICADA: Despliega de forma limpia y fija el mensaje de error si la cuenta está bloqueada */}
+          {/* ALERTA UNIFICADA: Pinta de forma fija el error de dominio o de Whitelist */}
           {errorAMostrar && (
             <Alert 
               severity="error" 
@@ -144,7 +148,6 @@ export default function Login({ institutionalError, setInstitutionalError }) {
             )}
           </Button>
 
-          {/* PIE DE PÁGINA SANEADO Y COHERENTE */}
           <Box sx={{ mt: 4 }}>
             <Typography 
               variant="caption" 
