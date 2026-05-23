@@ -8,18 +8,7 @@ import Casos from './views/Casos';
 import DetalleCaso from './views/DetalleCaso';
 import UsuariosAutorizados from './views/UsuariosAutorizados';
 import LogsAuditoria from './views/LogsAuditoria';
-import { 
-  Typography, 
-  Paper, 
-  Box, 
-  CircularProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button
-} from '@mui/material';
-import { ShieldAlert } from 'lucide-react';
+import { Typography, Paper, Box, CircularProgress } from '@mui/material';
 
 function App() {
   const { user, logout } = useAuth();
@@ -28,11 +17,11 @@ function App() {
   
   const [userRole, setUserRole] = useState('Abogado/a'); 
   const [loadingRole, setLoadingRole] = useState(true);
-  const [openUnauthorizedModal, setOpenUnauthorizedModal] = useState(false);
+  
+  // NUEVO ESTADO: Almacena de forma segura los mensajes de rechazo perimetral de la whitelist
+  const [institutionalError, setInstitutionalError] = useState('');
 
-  // =====================================================================================
-  // CORRECCIÓN CRÍTICA: Funciones declaradas al inicio para evitar la zona muerta de alcance
-  // =====================================================================================
+  // Declaración temprana de funciones para evitar problemas de alcance en compilación de producción
   const handleSelectCaso = (caso) => {
     setView('detalle_caso');
     setCasoSeleccionado(caso);
@@ -43,9 +32,6 @@ function App() {
     setCasoSeleccionado(null);
   };
 
-  // =====================================================================================
-  // EFECTOS DE CONTROL DE FLUJO Y ROL
-  // =====================================================================================
   useEffect(() => {
     const resolverRolYPermisos = async () => {
       if (!user) {
@@ -53,15 +39,16 @@ function App() {
         return;
       }
 
-      // Control preventivo: Forzar reinicio de vistas al detectar cambio de usuario
+      // Control preventivo: Limpiar expedientes activos ante cambios de sesión
       setView('casos');
       setCasoSeleccionado(null);
 
       const emailLimpio = user.email.toLowerCase();
 
-      // REGLA ROOT: Cuenta Superadmin Hardcoded
+      // REGLA ROOT: Cuenta Superadmin Hardcoded inviolable
       if (emailLimpio === 'webmaster@iiresodh.org') {
         setUserRole('Superadmin');
+        setInstitutionalError('');
         setLoadingRole(false);
         return;
       }
@@ -74,10 +61,14 @@ function App() {
         if (userDocSnap.exists()) {
           const userDoc = userDocSnap.data();
           setUserRole(userDoc.rol || 'Abogado/a');
-          setOpenUnauthorizedModal(false);
+          setInstitutionalError('');
         } else {
-          // Intercepción perimetral si el correo no figura en la Whitelist
-          setOpenUnauthorizedModal(true);
+          // =====================================================================================
+          // INTERCEPCIÓN PERIMETRAL: El usuario no figura en la Whitelist institucional.
+          // Forzamos el deslogueo en Firebase y mandamos el mensaje directo a la vista de Login.
+          // =====================================================================================
+          await logout();
+          setInstitutionalError(`Acceso Denegado: La cuenta de correo ${user.email} no se encuentra registrada ni autorizada en el sistema.`);
         }
       } catch (err) {
         console.error('Error crítico resolviendo roles en Firebase:', err);
@@ -91,6 +82,7 @@ function App() {
     resolverRolYPermisos();
   }, [user]);
 
+  // GUARDIA DE NAVEGACIÓN ACTIVA: Protege las URLs internas de accesos residuales
   useEffect(() => {
     if (!loadingRole) {
       if (view === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
@@ -102,13 +94,17 @@ function App() {
     }
   }, [view, userRole, loadingRole]);
 
-  // =====================================================================================
-  // SECCIÓN DE SALIDAS PREVENTIVAS (Ubicadas correctamente tras declarar las funciones)
-  // =====================================================================================
+  // SALIDA 1: Si no hay usuario activo, renderiza la pantalla de Login pasándole los errores institucionales
   if (!user) {
-    return <Login />;
+    return (
+      <Login 
+        institutionalError={institutionalError} 
+        setInstitutionalError={setInstitutionalError} 
+      />
+    );
   }
 
+  // SALIDA 2: Pantalla de transición mientras Firestore resuelve las credenciales del servidor
   if (loadingRole) {
     return (
       <Box 
@@ -124,97 +120,7 @@ function App() {
     );
   }
 
-  if (openUnauthorizedModal) {
-    return (
-      <Box 
-        sx={{ 
-          display: 'flex', 
-          justifyContent: 'center', 
-          alignItems: 'center', 
-          minHeight: '100vh', 
-          bgcolor: '#f8fafc' 
-        }}
-      >
-        <Dialog
-          open={openUnauthorizedModal}
-          fullWidth
-          maxWidth="xs"
-          slotProps={{ 
-            paper: { 
-              sx: { 
-                borderRadius: 3, 
-                border: '2px solid #ef4444',
-                p: 1
-              } 
-            } 
-          }}
-        >
-          <DialogTitle 
-            sx={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 1.5, 
-              color: '#b91c1c', 
-              fontWeight: 'bold' 
-            }}
-          >
-            <ShieldAlert size={26} />
-            Acceso Denegado
-          </DialogTitle>
-          
-          <DialogContent dividers>
-            <Typography variant="body2" color="text.primary" gutterBottom>
-              La cuenta de correo institucional con la que acaba de autenticarse no se encuentra registrada en el sistema.
-            </Typography>
-            
-            <Box 
-              sx={{ 
-                bgcolor: '#fef2f2', 
-                p: 2, 
-                borderRadius: 2, 
-                my: 2, 
-                border: '1px solid #fee2e2' 
-              }}
-            >
-              <Typography variant="caption" display="block" color="#b91c1c" fontWeight="bold">
-                Usuario Identificado:
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-                {user?.email}
-              </Typography>
-            </Box>
-
-            <Typography variant="caption" color="text.secondary" display="block">
-              Si usted pertenece al cuerpo de Abogados o personal Administrativo de IIRESODH, por favor solicite a la dirección o a un administrador del sistema que pre-autorice su cuenta de correo electrónico.
-            </Typography>
-          </DialogContent>
-
-          <DialogActions sx={{ p: 2 }}>
-            <Button
-              fullWidth
-              variant="contained"
-              color="error"
-              onClick={async () => {
-                await logout();
-                setOpenUnauthorizedModal(false);
-              }}
-              sx={{ 
-                textTransform: 'none', 
-                fontWeight: 'bold',
-                borderRadius: 2
-              }}
-            >
-              Entendido y Volver al Login
-            </Button>
-          </DialogActions>
-        </Dialog>
-      </Box>
-    );
-  }
-
-  // =====================================================================================
-  // RENDERIZADO SEGURO DE LA APLICACIÓN
-  // =====================================================================================
+  // SANITIZACIÓN FINAL DEL COMPONENTE DE RENDERIZADO
   let vistaSegura = view;
   if (vistaSegura === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
     vistaSegura = 'casos';

@@ -11,24 +11,32 @@ import {
 } from '@mui/material';
 import { Scale } from 'lucide-react';
 
-export default function Login() {
+export default function Login({ institutionalError, setInstitutionalError }) {
   const { loginWithGoogle } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [localError, setLocalError] = useState('');
 
   const handleLogin = async () => {
     setLoading(true);
-    setError('');
+    setLocalError('');
+    
+    // Al presionar el botón limpiamos cualquier alerta previa para procesar la nueva transacción
+    if (setInstitutionalError) {
+      setInstitutionalError('');
+    }
     
     try {
       await loginWithGoogle();
     } catch (err) {
       console.error(err);
-      setError('Error de autenticación. Asegúrese de utilizar su cuenta de Google institucional autorizada.');
+      setLocalError('Error de autenticación. Asegúrese de utilizar su cuenta de Google institucional autorizada.');
     } finally {
       setLoading(false);
     }
   };
+
+  // Conciliación de errores: prioriza el mensaje de denegación de la whitelist enviado por App.jsx
+  const errorAMostrar = localError || institutionalError;
 
   return (
     <Box 
@@ -92,16 +100,18 @@ export default function Login() {
             Acceso exclusivo para personal legal y administrativo de IIRESODH.
           </Typography>
 
-          {error && (
+          {/* ALERTA UNIFICADA: Despliega de forma limpia y fija el mensaje de error si la cuenta está bloqueada */}
+          {errorAMostrar && (
             <Alert 
               severity="error" 
               sx={{ 
                 mb: 3, 
                 borderRadius: 2,
-                textAlign: 'left' 
+                textAlign: 'left',
+                fontWeight: 'medium'
               }}
             >
-              {error}
+              {errorAMostrar}
             </Alert>
           )}
 
