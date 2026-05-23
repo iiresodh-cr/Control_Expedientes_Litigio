@@ -37,11 +37,13 @@ function App() {
         return;
       }
 
+      // Control preventivo: Limpiar expedientes activos ante cambios de sesión
       setView('casos');
       setCasoSeleccionado(null);
 
       const emailLimpio = user.email.toLowerCase();
 
+      // REGLA ROOT: Cuenta Superadmin Hardcoded inviolable
       if (emailLimpio === 'webmaster@iiresodh.org') {
         setUserRole('Superadmin');
         setInstitutionalError('');
@@ -49,6 +51,7 @@ function App() {
         return;
       }
 
+      // Consulta directa por ID de documento (Email)
       try {
         const userDocRef = doc(db, 'usuarios_autorizados', emailLimpio);
         const userDocSnap = await getDoc(userDocRef);
@@ -58,19 +61,21 @@ function App() {
           setUserRole(userDoc.rol || 'Abogado/a');
           setInstitutionalError('');
         } else {
-          // Si no está en la Whitelist, forzar expulsión inmediata
+          // Intercepción perimetral si el correo no figura en la lista blanca
           await logout();
-          setInstitutionalError(`Acceso Denegado: La cuenta ${user.email} no se encuentra pre-autorizada en el sistema.`);
+          setInstitutionalError('Acceso Denegado: La cuenta de correo con la que se identificó no se encuentra registrada ni autorizada en la plataforma.');
         }
       } catch (err) {
-        console.error('Error de permisos atrapado en App.jsx:', err);
+        console.error('Error interno de credenciales:', err);
         
-        // CORRECCIÓN CRÍTICA: Si Firestore arroja error de permisos, expulsamos al login con el mensaje explícito
+        // CORRECCIÓN SANEADA: Expulsión con mensajes institucionales opacos
         await logout();
+        setUserRole('Abogado/a');
+        
         if (err.code === 'permission-denied') {
-          setInstitutionalError('Acceso Restringido: Las reglas de seguridad de Firestore rechazaron la consulta de validación de tu cuenta.');
+          setInstitutionalError('Error de Sistema: No se pudo verificar el perfil de su cuenta debido a una restricción de acceso del servidor. Contacte al administrador.');
         } else {
-          setInstitutionalError(`Error del Servidor: No se pudieron validar tus credenciales de acceso (${err.message}).`);
+          setInstitutionalError('Error de Comunicación: Ocurrió un problema al procesar su solicitud de ingreso. Por favor, intente de nuevo más tarde.');
         }
       } finally {
         setLoadingRole(false);
@@ -81,6 +86,7 @@ function App() {
     resolverRolYPermisos();
   }, [user]);
 
+  // GUARDIA DE NAVEGACIÓN ACTIVA: Protege las URLs de accesos manuales residuales
   useEffect(() => {
     if (!loadingRole) {
       if (view === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
@@ -92,7 +98,7 @@ function App() {
     }
   }, [view, userRole, loadingRole]);
 
-  // Redirecciones de Renderizado según el estado de la sesión
+  // Renderizado condicional si no hay sesión activa
   if (!user) {
     return (
       <Login 
@@ -102,14 +108,23 @@ function App() {
     );
   }
 
+  // Pantalla de carga mientras se validan las llaves en el servidor
   if (loadingRole) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          minHeight: '100vh' 
+        }}
+      >
         <CircularProgress />
       </Box>
     );
   }
 
+  // Sanitización de vistas antes del renderizado
   let vistaSegura = view;
   if (vistaSegura === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
     vistaSegura = 'casos';
