@@ -61,22 +61,17 @@ function App() {
           setUserRole(userDoc.rol || 'Abogado/a');
           setInstitutionalError('');
         } else {
-          // Intercepción perimetral si el correo no figura en la lista blanca
+          // INTERCEPCIÓN SECRETA: Fuera de la Whitelist, se corta el acceso sin dar explicaciones
           await logout();
-          setInstitutionalError('Acceso Denegado: La cuenta de correo con la que se identificó no se encuentra registrada ni autorizada en la plataforma.');
+          setInstitutionalError('Acceso denegado: No tiene acceso a esta plataforma.');
         }
       } catch (err) {
         console.error('Error interno de credenciales:', err);
         
-        // CORRECCIÓN SANEADA: Expulsión con mensajes institucionales opacos
+        // Cierre de seguridad ante cualquier fallo o rechazo perimetral
         await logout();
         setUserRole('Abogado/a');
-        
-        if (err.code === 'permission-denied') {
-          setInstitutionalError('Error de Sistema: No se pudo verificar el perfil de su cuenta debido a una restricción de acceso del servidor. Contacte al administrador.');
-        } else {
-          setInstitutionalError('Error de Comunicación: Ocurrió un problema al procesar su solicitud de ingreso. Por favor, intente de nuevo más tarde.');
-        }
+        setInstitutionalError('Acceso denegado: No tiene acceso a esta plataforma.');
       } finally {
         setLoadingRole(false);
       }
