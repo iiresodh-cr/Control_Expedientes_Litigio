@@ -1,454 +1,530 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../config/firebase';
+import { db, storage } from '../config/firebase';
 import { 
   collection, 
+  addDoc, 
   getDocs, 
-  addDoc 
+  serverTimestamp, 
+  doc, 
+  deleteDoc, 
+  query, 
+  orderBy 
 } from 'firebase/firestore';
 import { 
+  ref, 
+  uploadBytesResumable, 
+  getDownloadURL, 
+  deleteObject 
+} from 'firebase/storage';
+import { 
   Box, 
-  Typography, 
   Button, 
+  Typography, 
+  Tabs, 
+  Tab, 
   Paper, 
-  Grid, 
-  Chip, 
-  Divider, 
   Table, 
   TableBody, 
   TableCell, 
   TableContainer, 
   TableHead, 
-  TableRow,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Alert,
-  Tabs,
-  Tab,
-  Card,
-  CardContent
+  TableRow, 
+  TextField, 
+  Dialog, 
+  DialogTitle, 
+  DialogContent, 
+  DialogActions, 
+  IconButton, 
+  Chip, 
+  CircularProgress, 
+  Alert, 
+  Divider, 
+  FormControl, 
+  InputLabel, 
+  Select, 
+  MenuItem, 
+  LinearProgress, 
+  List, 
+  ListItem, 
+  ListItemText 
 } from '@mui/material';
 import { 
   ArrowLeft, 
   Users, 
   FileText, 
-  Plus 
+  CreditCard, 
+  Plus, 
+  Eye, 
+  Upload, 
+  File, 
+  Trash2 
 } from 'lucide-react';
+import FichaCliente from './FichaCliente';
+import { registrarLogAuditoria } from '../utils/auditLogger';
+
+const DOC_TYPES = [
+  'Cédula de Identidad', 
+  'DNI', 
+  'Pasaporte', 
+  'RUT', 
+  'Cédula de Residencia', 
+  'Otro'
+];
+
+const COUNTRIES = [
+  { code: 'CR', name: 'Costa Rica', phone: '+506' },
+  { code: 'US', name: 'Estados Unidos', phone: '+1' },
+  { code: 'MX', name: 'México', phone: '+52' },
+  { code: 'ES', name: 'España', phone: '+34' },
+  { code: 'CO', name: 'Colombia', phone: '+57' },
+  { code: 'AR', name: 'Argentina', phone: '+54' },
+  { code: 'CL', name: 'Chile', phone: '+56' },
+  { code: 'PE', name: 'Perú', phone: '+51' },
+  { code: 'EC', name: 'Ecuador', phone: '+593' },
+  { code: 'PA', name: 'Panamá', phone: '+507' },
+  { code: 'SV', name: 'El Salvador', phone: '+503' },
+  { code: 'GT', name: 'Guatemala', phone: '+502' },
+  { code: 'HN', name: 'Honduras', phone: '+504' },
+  { code: 'NI', name: 'Nicaragua', phone: '+505' },
+  { code: 'VE', name: 'Venezuela', phone: '+58' },
+  { code: 'UY', name: 'Uruguay', phone: '+598' },
+  { code: 'PY', name: 'Paraguay', phone: '+595' },
+  { code: 'BO', name: 'Bolivia', phone: '+591' },
+  { code: 'CA', name: 'Canadá', phone: '+1' },
+  { code: 'GB', name: 'Reino Unido', phone: '+44' },
+  { code: 'FR', name: 'Francia', phone: '+33' },
+  { code: 'DE', name: 'Alemania', phone: '+49' },
+  { code: 'IT', name: 'Italia', phone: '+39' }
+];
+
+function TabPanel(props) {
+  const { children, value, index, ...other } = props;
+  return (
+    <div role="tabpanel" hidden={value !== index} {...other}>
+      {value === index && (
+        <Box sx={{ py: 3 }}>
+          {children}
+        </Box>
+      )}
+    </div>
+  );
+}
 
 export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole }) {
-  const [instanciaCaso, setInstanciaCaso] = useState(caso);
   const [activeTab, setActiveTab] = useState(0);
-  const [error, setError] = useState('');
-  const [loadingSubs, setLoadingSubs] = useState(false);
-
-  // COLECCIONES SECUNDARIAS DE LA FIRMA
   const [clientes, setClientes] = useState([]);
-  const [documentosComunes, setDocumentosComunes] = useState([]);
-  const [clienteSeleccionado, setClienteSeleccionado] = useState(null);
-  const [notasCliente, setNotasCliente] = useState([]);
-  const [docsCliente, setDocsCliente] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [clienteSeleccionadoId, setClienteSeleccionadoId] = useState(null);
+  
+  // Estados para documentos comunes compartidos
+  const [docsComunes, setDocsComunes] = useState([]);
+  const [loadingDocs, setLoadingDocs] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [uploadProgressDoc, setUploadProgressDoc] = useState(0);
 
-  // ESTADOS MODALES: PESTAÑA 0 (CLIENTES)
-  const [openClienteModal, setOpenClienteModal] = useState(false);
-  const [nombreCliente, setNombreCliente] = useState('');
-  const [identificacionCliente, setIdentificacionCliente] = useState('');
-  const [openNotaModal, setOpenNotaModal] = useState(false);
-  const [contenidoNota, setContenidoNota] = useState('');
-  const [openDocClienteModal, setOpenDocClienteModal] = useState(false);
-  const [nombreDocCliente, setNombreDocCliente] = useState('');
-  const [urlDocCliente, setUrlDocCliente] = useState('');
+  // Estados del formulario del representado
+  const [openModal, setOpenModal] = useState(false);
+  const [nombres, setNombres] = useState('');
+  const [apellidos, setApellidos] = useState('');
+  const [tipoIdentificacion, setTipoIdentificacion] = useState('Cédula de Identidad');
+  const [identificacion, setIdentificacion] = useState('');
+  const [correoPrincipal, setCorreoPrincipal] = useState('');
+  const [codigoTelefonoPrincipal, setCodigoTelefonoPrincipal] = useState('+506');
+  const [telefonoPrincipal, setTelefonoPrincipal] = useState('');
+  const [pais, setPais] = useState('Costa Rica');
+  const [direccion, setDireccion] = useState('');
+  const [notas, setNotas] = useState('');
 
-  // ESTADOS MODALES: PESTAÑA 1 (DOCS COMUNES)
-  const [openDocComunModal, setOpenDocComunModal] = useState(false);
-  const [nombreDocComun, setNombreDocComun] = useState('');
-  const [urlDocComun, setUrlDocComun] = useState('');
-
-  const cargarSubcoleccionesCaso = async () => {
-    setLoadingSubs(true);
+  const fetchClientes = async () => {
+    setLoading(true);
     setError('');
     try {
-      // 1. Cargar Clientes vinculados al Litigio
-      const clientesRef = collection(db, 'casos', instanciaCaso.id, 'clientes');
-      const snapClientes = await getDocs(clientesRef);
-      setClientes(snapClientes.docs.map(d => ({ id: d.id, ...d.data() })));
-
-      // 2. Cargar Documentos Comunes del Litigio
-      const documentosComunesRef = collection(db, 'casos', instanciaCaso.id, 'documentos_comunes');
-      const snapDocs = await getDocs(documentosComunesRef);
-      setDocumentosComunes(snapDocs.docs.map(d => ({ id: d.id, ...d.data() })));
+      const clientesRef = collection(db, 'casos', caso.id, 'clientes');
+      const snapshot = await getDocs(clientesRef);
+      const lista = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      lista.sort((a, b) => (a.apellidos || '').localeCompare(b.apellidos || ''));
+      setClientes(lista);
     } catch (err) {
-      setError('Acceso denegado: Restricción perimetral al consultar subcolecciones del caso.');
-    } finally {
-      setLoadingSubs(false);
+      console.error(err);
+      setError('Error al cargar la lista de clientes.');
+    } finally { 
+      setLoading(false); 
+    }
+  };
+
+  const fetchDocsComunes = async () => {
+    setLoadingDocs(true);
+    try {
+      const docsRef = collection(db, 'casos', caso.id, 'documentos_comunes');
+      const snapshot = await getDocs(query(docsRef, orderBy('fecha_subida', 'desc')));
+      setDocsComunes(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error(err);
+    } finally { 
+      setLoadingDocs(false); 
     }
   };
 
   useEffect(() => {
-    cargarSubcoleccionesCaso();
-  }, [instanciaCaso.id]);
+    fetchClientes();
+    fetchDocsComunes();
+  }, [caso.id]);
 
-  const cargarDatosEspecificosCliente = async (cliente) => {
-    setClienteSeleccionado(cliente);
-    try {
-      const notasRef = collection(db, 'casos', instanciaCaso.id, 'clientes', cliente.id, 'notas');
-      const snapNotas = await getDocs(notasRef);
-      setNotasCliente(snapNotas.docs.map(d => ({ id: d.id, ...d.data() })));
-
-      const docsRef = collection(db, 'casos', instanciaCaso.id, 'clientes', cliente.id, 'documentos');
-      const snapDocs = await getDocs(docsRef);
-      setDocsCliente(snapDocs.docs.map(d => ({ id: d.id, ...d.data() })));
-    } catch (err) {
-      setError('Error al consultar el expediente privado del cliente.');
-    }
-  };
-
-  // =====================================================================================
-  // MANEJADORES: EXPEDIENTE DE CLIENTELA INTERNA (PESTAÑA 0)
-  // =====================================================================================
-  const handleCrearCliente = async (e) => {
+  const handleCreateCliente = async (e) => {
     e.preventDefault();
-    if (!nombreCliente || !identificacionCliente) return;
+    if (!nombres.trim() || !apellidos.trim() || !identificacion.trim()) return;
+
     try {
-      const ref = collection(db, 'casos', instanciaCaso.id, 'clientes');
-      await addDoc(ref, {
-        nombre: nombreCliente,
-        identificacion: identificacionCliente,
-        fechaAsociacion: new Date().toLocaleString()
+      const clientesRef = collection(db, 'casos', caso.id, 'clientes');
+      await addDoc(clientesRef, {
+        nombres: nombres.trim(),
+        apellidos: apellidos.trim(),
+        tipo_identificacion: tipoIdentificacion,
+        identificacion: identificacion.trim(),
+        correo_principal: correoPrincipal.trim(),
+        correo_secundario: '',
+        codigo_telefono_principal: codigoTelefonoPrincipal,
+        telefono_principal: telefonoPrincipal.trim(),
+        codigo_telefono_secundario: '+506',
+        telefono_secundario: '',
+        pais: pais,
+        direccion: direccion.trim(),
+        notas: notas.trim(),
+        estado_pago: 'Pendiente',
+        stripe_customer_id: '',
+        fecha_registro: serverTimestamp()
       });
 
-      setNombreCliente('');
-      setIdentificacionCliente('');
-      setOpenClienteModal(false);
-      cargarSubcoleccionesCaso();
+      await registrarLogAuditoria(
+        currentUserEmail, 
+        'Registro de Cliente', 
+        `Se inscribió al representado "${apellidos.trim(), nombres.trim()}" en el litigio [${caso.nombre}]`
+      );
+
+      setNombres('');
+      setApellidos('');
+      setIdentificacion('');
+      setCorreoPrincipal('');
+      setCodigoTelefonoPrincipal('+506');
+      setTelefonoPrincipal('');
+      setPais('Costa Rica');
+      setDireccion('');
+      setNotas('');
+      setOpenModal(false);
+      
+      fetchClientes();
     } catch (err) {
-      setError('Error al registrar cliente en la subcolección confidencial.');
+      setError('No se pudo registrar al cliente.');
     }
   };
 
-  const handleAgregarNotaCliente = async (e) => {
-    e.preventDefault();
-    if (!contenidoNota || !clienteSeleccionado) return;
+  const handleUploadDocComun = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setUploadingDoc(true);
+    setUploadProgressDoc(0);
+    setError('');
+
+    const storagePath = `casos/${caso.id}/documentos_comunes/${Date.now()}_${file.name}`;
+    const storageRef = ref(storage, storagePath);
+    const uploadTask = uploadBytesResumable(storageRef, file);
+
+    uploadTask.on('state_changed', 
+      (snap) => {
+        const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
+        setUploadProgressDoc(Math.round(progress));
+      },
+      (err) => { 
+        setError('Error al subir documento común.'); 
+        setUploadingDoc(false); 
+      },
+      async () => {
+        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+        await addDoc(collection(db, 'casos', caso.id, 'documentos_comunes'), {
+          nombre: file.name,
+          url: downloadURL,
+          storage_path: storagePath,
+          fecha_subida: new Date().toISOString()
+        });
+
+        await registrarLogAuditoria(
+          currentUserEmail, 
+          'Carga de Doc Común', 
+          `Se subió el documento global "${file.name}" para el caso "${caso.nombre}"`
+        );
+        
+        setUploadingDoc(false);
+        fetchDocsComunes();
+      }
+    );
+  };
+
+  const handleDeleteDocComun = async (docId, storagePath) => {
+    if (!window.confirm('¿Desea eliminar este documento global del caso?')) return;
     try {
-      const ref = collection(db, 'casos', instanciaCaso.id, 'clientes', clienteSeleccionado.id, 'notas');
-      await addDoc(ref, {
-        contenido: contenidoNota,
-        autor: currentUserEmail,
-        fecha: new Date().toLocaleString()
-      });
+      if (storagePath) {
+        await deleteObject(ref(storage, storagePath));
+      }
+      await deleteDoc(doc(db, 'casos', caso.id, 'documentos_comunes', docId));
 
-      setContenidoNota('');
-      setOpenNotaModal(false);
-      cargarDatosEspecificosCliente(clienteSeleccionado);
-    } catch (err) {
-      setError('Error al resguardar nota jurídica.');
+      await registrarLogAuditoria(
+        currentUserEmail, 
+        'Eliminación de Doc Común', 
+        `Se borró el documento global ID: ${docId} del litigio [${caso.nombre}]`
+      );
+
+      fetchDocsComunes();
+    } catch (err) { 
+      setError('Error al suprimir el documento común.'); 
     }
   };
 
-  const handleAgregarDocCliente = async (e) => {
-    e.preventDefault();
-    if (!nombreDocCliente || !urlDocCliente || !clienteSeleccionado) return;
-    try {
-      const ref = collection(db, 'casos', instanciaCaso.id, 'clientes', clienteSeleccionado.id, 'documentos');
-      await addDoc(ref, {
-        nombre: nombreDocCliente,
-        url: urlDocCliente,
-        fechaCarga: new Date().toLocaleString()
-      });
-
-      setNombreDocCliente('');
-      setUrlDocCliente('');
-      setOpenDocClienteModal(false);
-      cargarDatosEspecificosCliente(clienteSeleccionado);
-    } catch (err) {
-      setError('Error al registrar documento del cliente.');
-    }
-  };
-
-  // =====================================================================================
-  // MANEJADORES: REPOSITORIO DIGITAL DE DOCUMENTOS COMUNES (PESTAÑA 1)
-  // =====================================================================================
-  const handleAgregarDocComun = async (e) => {
-    e.preventDefault();
-    if (!nombreDocComun || !urlDocComun) return;
-    try {
-      const ref = collection(db, 'casos', instanciaCaso.id, 'documentos_comunes');
-      await addDoc(ref, {
-        nombre: nombreDocComun,
-        url: urlDocComun,
-        cargadoPor: currentUserEmail,
-        fechaCarga: new Date().toLocaleString()
-      });
-
-      setNombreDocComun('');
-      setUrlDocComun('');
-      setOpenDocComunModal(false);
-      cargarSubcoleccionesCaso();
-    } catch (err) {
-      setError('Error al anexar archivo al expediente común.');
-    }
-  };
+  if (clienteSeleccionadoId) {
+    return (
+      <FichaCliente 
+        casoId={caso.id} 
+        clienteId={clienteSeleccionadoId} 
+        onVolver={() => setClienteSeleccionadoId(null)} 
+        currentUserEmail={currentUserEmail} 
+      />
+    );
+  }
 
   return (
     <Box>
       <Button 
         startIcon={<ArrowLeft size={16} />} 
         onClick={onVolver} 
-        sx={{ color: '#1a365d', textTransform: 'none', fontWeight: 'bold', mb: 3 }}
+        sx={{ mb: 2, textTransform: 'none', color: 'text.secondary' }}
       >
-        Volver al listado de casos
+        Volver a todos los casos
       </Button>
 
-      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
-
-      {/* BLOQUE MEMBRETADO DEL EXPEDIENTE */}
-      <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none', mb: 4 }}>
-        <Typography variant="caption" fontWeight="bold" color="text.disabled" display="block">
-          EXPEDIENTE JUDICIAL ENTERPRISE
+      <Paper sx={{ p: 3, mb: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+        <Typography variant="h4" fontWeight="bold" color="primary.main" gutterBottom>
+          {caso.nombre}
         </Typography>
-        <Typography variant="h5" fontWeight="bold" color="#1a365d" gutterBottom>
-          {instanciaCaso.nombreCaso}
+        <Typography variant="body2" color="text.secondary">
+          {caso.descripcion || 'Sin descripción del litigio.'}
         </Typography>
-        <Divider sx={{ my: 2 }} />
-        <Grid container spacing={2}>
-          <Grid item xs={6} sm={3}>
-            <Typography variant="caption" color="text.secondary" display="block">No. Expediente</Typography>
-            <Typography variant="body2" fontWeight="bold" color="#1a365d">{instanciaCaso.numeroExpediente}</Typography>
-          </Grid>
-          <Grid item xs={6} sm={3}>
-            <Typography variant="caption" color="text.secondary" display="block">Materia Litigiosa</Typography>
-            <Typography variant="body2" fontWeight="bold">{instanciaCaso.materia}</Typography>
-          </Grid>
-          <Grid item xs={6} sm={3}>
-            <Typography variant="caption" color="text.secondary" display="block">Abogado Asignador</Typography>
-            <Typography variant="body2" fontSize="0.85rem">{instanciaCaso.creadoPor}</Typography>
-          </Grid>
-          <Grid item xs={6} sm={3}>
-            <Typography variant="caption" color="text.secondary" display="block">Clientes Vinculados</Typography>
-            <Typography variant="body2" fontWeight="bold">{clientes.length} Registrados</Typography>
-          </Grid>
-        </Grid>
       </Paper>
 
-      {/* SISTEMA DE NAVEGACIÓN POR PESTAÑAS JURÍDICAS */}
-      <Tabs 
-        value={activeTab} 
-        onChange={(e, newVal) => setActiveTab(newVal)} 
-        sx={{ mb: 3, borderBottom: '1px solid #e2e8f0', '& .MuiTab-root': { textTransform: 'none', fontWeight: 'bold' } }}
-      >
-        <Tab icon={<Users size={16} />} iconPosition="start" label="Clientes y Archivo Privado" />
-        <Tab icon={<FileText size={16} />} iconPosition="start" label="Expediente Digital Común" />
-      </Tabs>
+      <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+        <Tabs value={activeTab} onChange={(e, val) => setActiveTab(val)} textColor="primary" indicatorColor="primary">
+          <Tab icon={<Users size={18} />} iconPosition="start" label="Fichas de Clientes" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
+          <Tab icon={<FileText size={18} />} iconPosition="start" label="Documentos Comunes" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
+          <Tab icon={<CreditCard size={18} />} iconPosition="start" label="Control de Pagos" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
+        </Tabs>
+      </Box>
 
-      {/* CONTENIDO: TAB 0 - GESTIÓN DE CLIENTES, NOTAS INTERNAS Y DOCUMENTOS */}
-      {activeTab === 0 && (
-        <Box>
-          <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="subtitle1" fontWeight="bold" color="#1a365d">Clientes Adscritos al Caso</Typography>
-            <Button
-              variant="contained"
-              startIcon={<Plus size={16} />}
-              onClick={() => setOpenClienteModal(true)}
-              sx={{ bgcolor: '#1a365d', textTransform: 'none', fontWeight: 'bold', borderRadius: 2 }}
-            >
-              Asociar Cliente
-            </Button>
-          </Box>
-
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={4}>
-              {clientes.length === 0 ? (
-                <Alert severity="info">No se reportan clientes asignados a este litigio.</Alert>
-              ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                  {clientes.map(cli => (
-                    <Card 
-                      key={cli.id} 
-                      onClick={() => cargarDatosEspecificosCliente(cli)}
-                      sx={{ 
-                        cursor: 'pointer', 
-                        borderRadius: 2,
-                        border: clienteSeleccionado?.id === cli.id ? '2px solid #1a365d' : '1px solid #e2e8f0',
-                        boxShadow: 'none',
-                        bgcolor: clienteSeleccionado?.id === cli.id ? '#f8fafc' : '#ffffff'
-                      }}
-                    >
-                      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                        <Typography variant="body2" fontWeight="bold" color="#1a365d">{cli.nombre}</Typography>
-                        <Typography variant="caption" color="text.secondary" display="block">ID: {cli.identificacion}</Typography>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </Box>
-              )}
-            </Grid>
-
-            <Grid item xs={12} md={8}>
-              {clienteSeleccionado ? (
-                <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
-                  <Typography variant="subtitle2" fontWeight="bold" color="#1a365d" gutterBottom>
-                    Carpeta Legal de: {clienteSeleccionado.nombre}
-                  </Typography>
-                  <Divider sx={{ my: 2 }} />
-
-                  {/* SUB-SECCIÓN: NOTAS DEL ABOGADO */}
-                  <Box sx={{ mb: 4 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                      <Typography variant="caption" fontWeight="bold" color="text.secondary">Notas de Estrategia Interna</Typography>
-                      <Button size="small" startIcon={<Plus size={14} />} onClick={() => setOpenNotaModal(true)} sx={{ textTransform: 'none' }}>Anexar Nota</Button>
-                    </Box>
-                    {notasCliente.length === 0 ? (
-                      <Typography variant="caption" color="text.disabled" display="block">Sin anotaciones de staff.</Typography>
-                    ) : (
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        {notasCliente.map(n => (
-                          <Box key={n.id} sx={{ p: 1.5, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #edf2f7' }}>
-                            <Typography variant="body2">{n.contenido}</Typography>
-                            <Typography variant="caption" color="text.disabled" display="block" sx={{ mt: 0.5 }}>Por: {n.autor} — {n.fecha}</Typography>
-                          </Box>
-                        ))}
-                      </Box>
-                    )}
-                  </Box>
-
-                  {/* SUB-SECCIÓN: DOCUMENTACIÓN PRIVADA */}
-                  <Box>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                      <Typography variant="caption" fontWeight="bold" color="text.secondary">Documentación Personal / Poderes</Typography>
-                      <Button size="small" startIcon={<Plus size={14} />} onClick={() => setOpenDocClienteModal(true)} sx={{ textTransform: 'none' }}>Subir Archivo</Button>
-                    </Box>
-                    {docsCliente.length === 0 ? (
-                      <Typography variant="caption" color="text.disabled" display="block">No se cargaron archivos para este titular.</Typography>
-                    ) : (
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        {docsCliente.map(d => (
-                          <Box key={d.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1, border: '1px solid #e2e8f0', borderRadius: 2 }}>
-                            <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}><FileText size={14} /> {d.nombre}</Typography>
-                            <Button size="small" href={d.url} target="_blank" rel="noopener" sx={{ textTransform: 'none' }}>Ver Enlace</Button>
-                          </Box>
-                        ))}
-                      </Box>
-                    )}
-                  </Box>
-                </Paper>
-              ) : (
-                <Box sx={{ p: 4, textAlign: 'center', border: '1px dashed #e2e8f0', borderRadius: 3 }}>
-                  <Typography variant="body2" color="text.disabled">Seleccione un cliente de la lista para abrir su archivo de notas y poderes.</Typography>
-                </Box>
-              )}
-            </Grid>
-          </Grid>
+      {/* PESTAÑA 1: RECONSTRUCCIÓN VERTICAL TABLA DE REPRESETADOS */}
+      <TabPanel value={activeTab} index={0}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h6" fontWeight="bold">Representados en el Litigio</Typography>
+          <Button 
+            variant="contained" 
+            startIcon={<Plus size={18} />} 
+            onClick={() => setOpenModal(true)} 
+            sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold' }}
+          >
+            Agregar Cliente
+          </Button>
         </Box>
-      )}
 
-      {/* CONTENIDO: TAB 1 - EXPEDIENTE DIGITAL COMÚN */}
-      {activeTab === 1 && (
-        <Box>
-          <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="subtitle1" fontWeight="bold" color="#1a365d">Archivos y Actuaciones Comunes del Caso</Typography>
-            <Button
-              variant="contained"
-              startIcon={<Plus size={16} />}
-              onClick={() => setOpenDocComunModal(true)}
-              sx={{ bgcolor: '#1a365d', textTransform: 'none', fontWeight: 'bold', borderRadius: 2 }}
-            >
-              Anexar Documento Común
-            </Button>
-          </Box>
-
-          {documentosComunes.length === 0 ? (
-            <Alert severity="info">El expediente digital común se encuentra vacío. No se han anexado demandas o resoluciones.</Alert>
-          ) : (
-            <TableContainer component={Paper} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
-              <Table size="small">
-                <TableHead sx={{ bgcolor: '#f8fafc' }}>
-                  <TableRow>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Nombre del Archivo / Actuación</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Cargado Por</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Fecha de Carga</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold', textAlign: 'center' }}>Acceso</TableCell>
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
+        ) : clientes.length === 0 ? (
+          <Alert severity="info" sx={{ borderRadius: 2 }}>No hay clientes registrados.</Alert>
+        ) : (
+          <TableContainer component={Paper} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+            <Table>
+              <TableHead sx={{ bgcolor: '#f8fafc' }}>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Apellidos y Nombres</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Documento de Identidad</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>País</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Contacto Principal</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Pago Stripe</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Acciones</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {clientes.map((clienteItem) => (
+                  <TableRow key={clienteItem.id} hover>
+                    <TableCell sx={{ fontWeight: 'medium' }}>
+                      {clienteItem.apellidos}, {clienteItem.nombres}
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{clienteItem.identificacion}</Typography>
+                      <Typography variant="caption" color="text.secondary">{clienteItem.tipo_identificacion}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      {clienteItem.pais || 'No especificado'}
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{clienteItem.correo_principal || 'Sin correo'}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {clienteItem.telefono_principal ? `${clienteItem.codigo_telefono_principal} ${clienteItem.telefono_principal}` : 'Sin teléfono'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={clienteItem.estado_pago} 
+                        size="small" 
+                        color={clienteItem.estado_pago === 'Pagado' ? 'success' : 'warning'} 
+                        sx={{ fontWeight: 'bold' }} 
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <IconButton 
+                        size="small" 
+                        color="primary" 
+                        title="Ver Ficha Completa" 
+                        onClick={() => setClienteSeleccionadoId(clienteItem.id)}
+                      >
+                        <Eye size={18} />
+                      </IconButton>
+                    </TableCell>
                   </TableRow>
-                </TableHead>
-                <TableBody>
-                  {documentosComunes.map(doc => (
-                    <TableRow key={doc.id} hover>
-                      <TableCell sx={{ fontWeight: 'medium', py: 1.5 }}>{doc.name || doc.nombre}</TableCell>
-                      <TableCell sx={{ fontSize: '0.85rem' }}>{doc.cargadoPor || 'Personal de Staff'}</TableCell>
-                      <TableCell sx={{ fontSize: '0.85rem', color: 'text.secondary' }}>{doc.fechaCarga}</TableCell>
-                      <TableCell sx={{ textAlign: 'center' }}>
-                        <Button variant="text" size="small" href={doc.url} target="_blank" rel="noopener" sx={{ textTransform: 'none', fontWeight: 'bold' }}>
-                          Abrir Documento
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </TabPanel>
+
+      {/* PESTAÑA 2: DOCUMENTOS COMUNES */}
+      <TabPanel value={activeTab} index={1}>
+        <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Box>
+              <Typography variant="h6" fontWeight="bold">Escritos y Respuestas de Instancias Internacionales</Typography>
+            </Box>
+            <Button 
+              variant="contained" 
+              component="label" 
+              startIcon={<Upload size={18} />} 
+              disabled={uploadingDoc} 
+              sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold' }}
+            >
+              {uploadingDoc ? 'Subiendo...' : 'Subir Documento Común'}
+              <input type="file" accept="application/pdf,image/*" hidden onChange={handleUploadDocComun} />
+            </Button>
+          </Box>
+          
+          {uploadingDoc && (
+            <Box sx={{ width: '100%', mb: 3 }}>
+              <LinearProgress variant="determinate" value={uploadProgressDoc} />
+            </Box>
           )}
+
+          {loadingDocs ? (
+            <CircularProgress />
+          ) : docsComunes.length === 0 ? (
+            <Alert severity="info">No hay documentos globales subidos para este litigio.</Alert>
+          ) : (
+            <List>
+              {docsComunes.map((d) => (
+                <ListItem key={d.id} disablePadding sx={{ mb: 1, display: 'flex', gap: 2 }}>
+                  <Button 
+                    component="a" 
+                    href={d.url} 
+                    target="_blank" 
+                    variant="text" 
+                    color="inherit" 
+                    startIcon={<File size={16} />} 
+                    sx={{ flexGrow: 1, justifyContent: 'flex-start', p: 1.5, bgcolor: '#f8fafc', borderRadius: 1.5 }}
+                  >
+                    <ListItemText 
+                      primary={d.nombre} 
+                      secondary={d.fecha_subida ? `Subido: ${new Date(d.fecha_subida).toLocaleString()}` : ''} 
+                    />
+                  </Button>
+                  <IconButton 
+                    size="small" 
+                    color="error" 
+                    onClick={() => handleDeleteDocComun(d.id, d.storage_path)} 
+                    sx={{ border: '1px solid #fee2e2', bgcolor: '#fef2f2', p: 1.25 }}
+                  >
+                    <Trash2 size={18} />
+                  </IconButton>
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </Paper>
+      </TabPanel>
+
+      {/* PESTAÑA 3: PAGOS */}
+      <TabPanel value={activeTab} index={2}>
+        <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+          <Typography variant="h6" fontWeight="bold" gutterBottom>Pasarela de Stripe</Typography>
+          <Typography variant="body2" color="text.secondary">Registro general de conciliación de pagos de este litigio.</Typography>
+        </Paper>
+      </TabPanel>
+
+      {/* MODAL DE AGREGAR CLIENTE EXTENDIDO */}
+      <Dialog open={openModal} onClose={() => setOpenModal(false)} fullWidth maxWidth="sm" slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+        <DialogTitle fontWeight="bold">Nueva Ficha de Cliente</DialogTitle>
+        <Box component="form" onSubmit={handleCreateCliente}>
+          <DialogContent dividers>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2.5 }}>
+              <TextField label="Nombres" required fullWidth value={nombres} onChange={(e) => setNombres(e.target.value)} />
+              <TextField label="Apellidos" required fullWidth value={apellidos} onChange={(e) => setApellidos(e.target.value)} />
+            </Box>
+            
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2.5 }}>
+              <FormControl fullWidth>
+                <InputLabel>Tipo Identificación</InputLabel>
+                <Select value={tipoIdentificacion} label="Tipo Identificación" onChange={(e) => setTipoIdentificacion(e.target.value)}>
+                  {DOC_TYPES.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <TextField label="Número de Identificación" required fullWidth value={identificacion} onChange={(e) => setIdentificacion(e.target.value)} />
+            </Box>
+            
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2.5 }}>
+              <FormControl fullWidth>
+                <InputLabel>País de Residencia</InputLabel>
+                <Select 
+                  value={pais} 
+                  label="País de Residencia" 
+                  onChange={(e) => { 
+                    setPais(e.target.value); 
+                    const c = COUNTRIES.find(x => x.name === e.target.value); 
+                    if (c) setCodigoTelefonoPrincipal(c.phone); 
+                  }}
+                >
+                  {COUNTRIES.map(c => <MenuItem key={c.code} value={c.name}>{c.name}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <TextField label="Email Principal" type="email" required fullWidth value={correoPrincipal} onChange={(e) => setCorreoPrincipal(e.target.value)} />
+            </Box>
+            
+            <Box sx={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 2, mb: 2.5 }}>
+              <FormControl fullWidth>
+                <InputLabel>Código</InputLabel>
+                <Select value={codigoTelefonoPrincipal} label="Código" onChange={(e) => setCodigoTelefonoPrincipal(e.target.value)}>
+                  {COUNTRIES.map(c => <MenuItem key={c.code} value={c.phone}>{`${c.code} (${c.phone})`}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <TextField label="Número Telefónico Principal" fullWidth value={telefonoPrincipal} onChange={(e) => setTelefonoPrincipal(e.target.value)} />
+            </Box>
+            
+            <Box sx={{ mb: 2.5 }}>
+              <TextField label="Dirección Física" fullWidth multiline rows={2} value={direccion} onChange={(e) => setDireccion(e.target.value)} />
+            </Box>
+            
+            <TextField label="Notas Jurídicas Iniciales" fullWidth multiline rows={2} value={notas} onChange={(e) => setNotas(e.target.value)} />
+          </DialogContent>
+          <DialogActions sx={{ p: 2.5 }}>
+            <Button onClick={() => setOpenModal(false)} color="inherit">Cancelar</Button>
+            <Button type="submit" variant="contained">Registrar en el Caso</Button>
+          </DialogActions>
         </Box>
-      )}
-
-      {/* SECCIÓN DE MODALES REVISADOS */}
-      
-      {/* MODAL: REGISTRAR CLIENTE */}
-      <Dialog open={openClienteModal} onClose={() => setOpenClienteModal(false)} fullWidth maxWidth="xs">
-        <form onSubmit={handleCrearCliente}>
-          <DialogTitle sx={{ fontWeight: 'bold', color: '#1a365d' }}>Asociar Cliente al Litigio</DialogTitle>
-          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
-            <TextField label="Nombre Completo del Titular" fullWidth required value={nombreCliente} onChange={e => setNombreCliente(e.target.value)} />
-            <TextField label="Cédula / Documento de Identificación" fullWidth required value={identificacionCliente} onChange={e => setIdentificacionCliente(e.target.value)} />
-          </DialogContent>
-          <DialogActions sx={{ p: 2, bgcolor: '#f8fafc' }}>
-            <Button onClick={() => setOpenClienteModal(false)} color="inherit">Cancelar</Button>
-            <Button type="submit" variant="contained" sx={{ bgcolor: '#1a365d' }}>Asociar Cliente</Button>
-          </DialogActions>
-        </form>
-      </Dialog>
-
-      {/* MODAL: NUEVA NOTA */}
-      <Dialog open={openNotaModal} onClose={() => setOpenNotaModal(false)} fullWidth maxWidth="xs">
-        <form onSubmit={handleAgregarNotaCliente}>
-          <DialogTitle sx={{ fontWeight: 'bold', color: '#1a365d' }}>Anexar Nota de Estrategia</DialogTitle>
-          <DialogContent dividers sx={{ pt: 2 }}>
-            <TextField label="Contenido Confidencial de la Nota" multiline rows={4} fullWidth required value={contenidoNota} onChange={e => setContenidoNota(e.target.value)} />
-          </DialogContent>
-          <DialogActions sx={{ p: 2, bgcolor: '#f8fafc' }}>
-            <Button onClick={() => setOpenNotaModal(false)} color="inherit">Cancelar</Button>
-            <Button type="submit" variant="contained" sx={{ bgcolor: '#1a365d' }}>Guardar Nota</Button>
-          </DialogActions>
-        </form>
-      </Dialog>
-
-      {/* MODAL: DOCUMENTO DE CLIENTE */}
-      <Dialog open={openDocClienteModal} onClose={() => setOpenDocClienteModal(false)} fullWidth maxWidth="xs">
-        <form onSubmit={handleAgregarDocCliente}>
-          <DialogTitle sx={{ fontWeight: 'bold', color: '#1a365d' }}>Vincular Archivo Personal / Poder</DialogTitle>
-          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
-            <TextField label="Descripción del Archivo (Ej: Poder General)" fullWidth required value={nombreDocCliente} onChange={e => setNombreDocCliente(e.target.value)} />
-            <TextField label="URL de Descarga Segura (Firebase Storage / Drive)" fullWidth required value={urlDocCliente} onChange={e => setUrlDocCliente(e.target.value)} />
-          </DialogContent>
-          <DialogActions sx={{ p: 2, bgcolor: '#f8fafc' }}>
-            <Button onClick={() => setOpenDocClienteModal(false)} color="inherit">Cancelar</Button>
-            <Button type="submit" variant="contained" sx={{ bgcolor: '#1a365d' }}>Vincular Documento</Button>
-          </DialogActions>
-        </form>
-      </Dialog>
-
-      {/* MODAL: NUEVO DOCUMENTO COMÚN */}
-      <Dialog open={openDocComunModal} onClose={() => setOpenDocComunModal(false)} fullWidth maxWidth="xs">
-        <form onSubmit={handleAgregarDocComun}>
-          <DialogTitle sx={{ fontWeight: 'bold', color: '#1a365d' }}>Anexar Documento al Expediente Común</DialogTitle>
-          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
-            <TextField label="Nombre / Tipo de Actuación (Ej: Auto de Admisión)" fullWidth required value={nombreDocComun} onChange={e => setNombreDocComun(e.target.value)} />
-            <TextField label="URL de Acceso al Documento Digital" fullWidth required value={urlDocComun} onChange={e => setUrlDocComun(e.target.value)} />
-          </DialogContent>
-          <DialogActions sx={{ p: 2, bgcolor: '#f8fafc' }}>
-            <Button onClick={() => setOpenDocComunModal(false)} color="inherit">Cancelar</Button>
-            <Button type="submit" variant="contained" sx={{ bgcolor: '#1a365d' }}>Anexar Documento</Button>
-          </DialogActions>
-        </form>
       </Dialog>
     </Box>
   );
