@@ -138,7 +138,7 @@ export default function Login({ institutionalError, setInstitutionalError }) {
                 color="inherit" 
               />
             ) : (
-              'Iniciar Sesión con Google'
+              'Iniciar con @iiresodh.org'
             )}
           </Button>
 
@@ -147,7 +147,7 @@ export default function Login({ institutionalError, setInstitutionalError }) {
               variant="caption" 
               color="text.disabled"
             >
-              Control de Expedientes de Litigio • IIRESODH
+              Control de Expedientes de Litigio
             </Typography>
           </Box>
         </Paper>
