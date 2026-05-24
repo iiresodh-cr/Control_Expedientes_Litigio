@@ -302,24 +302,29 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         setUploadingDoc(false); 
       },
       async () => {
-        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-        await addDoc(collection(db, 'casos', caso.id, 'documentos_comunes'), {
-          nombre: file.name,
-          url: downloadURL,
-          storage_path: storagePath,
-          descripcion: desc.trim(),
-          fecha_documento: fechaDoc,
-          fecha_subida: new Date().toISOString()
-        });
+        try {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          await addDoc(collection(db, 'casos', caso.id, 'documentos_comunes'), {
+            nombre: file.name,
+            url: downloadURL,
+            storage_path: storagePath,
+            descripcion: desc.trim(),
+            fecha_documento: fechaDoc,
+            fecha_subida: new Date().toISOString()
+          });
 
-        await registrarLogAuditoria(
-          currentUserEmail, 
-          'Carga de Doc Común', 
-          `Se subió el documento global "${file.name}" con descripción: "${desc.trim()}" para el caso "${caso.nombre}"`
-        );
-        
-        setUploadingDoc(false);
-        fetchDocsComunes();
+          await registrarLogAuditoria(
+            currentUserEmail, 
+            'Carga de Doc Común', 
+            `Se subió el documento global "${file.name}" con descripción: "${desc.trim()}" para el caso "${caso.nombre}"`
+          );
+          
+          fetchDocsComunes();
+        } catch (ex) {
+          setError(`Error en Firestore al guardar metadatos del documento: ${ex.message}`);
+        } finally {
+          setUploadingDoc(false);
+        }
       }
     );
   };
@@ -484,7 +489,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           setOpenCerrarModal(false);
           fetchDocsComunes(); 
         } catch (ex) {
-          setError('Error al resguardar la inmutabilidad del hito.');
+          setError(`Error en Firestore al resolver plazo: ${ex.message}`);
         } finally {
           setUploadingPlazoDoc(false);
         }
@@ -520,7 +525,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         setUploadProgressComunicado(Math.round(progress));
       },
       (err) => {
-        setError('Error al subir el archivo del comunicado.');
+        setError(`Error al subir el archivo del comunicado a Storage: ${err.message}`);
         setUploadingComunicado(false);
       },
       async () => {
@@ -563,7 +568,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           setOpenComunicadoModal(false);
           fetchComunicados();
         } catch (ex) {
-          setError('Error al registrar los metadatos del comunicado.');
+          setError(`Error crítico en Firestore al registrar comunicado: ${ex.message}`);
         } finally {
           setUploadingComunicado(false);
         }
@@ -641,6 +646,12 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           {caso.descripcion || 'Sin descripción del litigio.'}
         </Typography>
       </Paper>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 3, borderRadius: 2, fontWeight: 'medium' }} onClose={() => setError('')}>
+          {error}
+        </Alert>
+      )}
 
       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
         <Tabs value={activeTab} onChange={(e, val) => setActiveTab(val)} textColor="primary" indicatorColor="primary">
@@ -1030,94 +1041,100 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Paper>
       </TabPanel>
 
-      {/* MODAL DE AGREGAR CLIENTE EXTENDIDO */}
+      {/* MODAL DE AGREGAR CLIENTE EXTENDIDO - SE ACOPLA LA LOGICA FORM AL CORAZON DEL DIALOG */}
       <Dialog 
         open={openModal} 
         onClose={() => setOpenModal(false)} 
         fullWidth 
         maxWidth="sm" 
-        disableEnforceFocus
-        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+        slotProps={{ 
+          paper: { 
+            component: 'form',
+            onSubmit: handleCreateCliente,
+            sx: { borderRadius: 3 } 
+          } 
+        }}
       >
         <DialogTitle fontWeight="bold">Nueva Ficha de Cliente</DialogTitle>
-        <Box component="form" onSubmit={handleCreateCliente}>
-          <DialogContent dividers>
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2.5 }}>
-              <TextField label="Nombres" required fullWidth value={nombres} onChange={(e) => setNombres(e.target.value)} />
-              <TextField label="Apellidos" required fullWidth value={apellidos} onChange={(e) => setApellidos(e.target.value)} />
-            </Box>
-            
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2.5 }}>
-              <FormControl fullWidth>
-                <InputLabel>Tipo Identificación</InputLabel>
-                <Select value={tipoIdentificacion} label="Tipo Identificación" onChange={(e) => setTipoIdentificacion(e.target.value)}>
-                  {DOC_TYPES.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
-                </Select>
-              </FormControl>
-              <TextField label="Número de Identificación" required fullWidth value={identificacion} onChange={(e) => setIdentificacion(e.target.value)} />
-            </Box>
-            
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2.5 }}>
-              <FormControl fullWidth>
-                <InputLabel>País de Residencia</InputLabel>
-                <Select 
-                  value={pais} 
-                  label="País de Residencia" 
-                  onChange={(e) => { 
-                    setPais(e.target.value); 
-                    const c = COUNTRIES.find(x => x.name === e.target.value); 
-                    if (c) setCodigoTelefonoPrincipal(c.phone); 
-                  }}
-                >
-                  {COUNTRIES.map(c => <MenuItem key={c.code} value={c.name}>{c.name}</MenuItem>)}
-                </Select>
-              </FormControl>
-              <TextField label="Email Principal" type="email" required fullWidth value={correoPrincipal} onChange={(e) => setCorreoPrincipal(e.target.value)} />
-            </Box>
-            
-            <Box sx={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 2, mb: 2.5 }}>
-              <FormControl fullWidth>
-                <InputLabel>Código</InputLabel>
-                <Select value={codigoTelefonoPrincipal} label="Código" onChange={(e) => setCodigoTelefonoPrincipal(e.target.value)}>
-                  {COUNTRIES.map(c => <MenuItem key={c.code} value={c.phone}>{`${c.code} (${c.phone})`}</MenuItem>)}
-                </Select>
-              </FormControl>
-              <TextField label="Número Telefónico Principal" fullWidth value={telefonoPrincipal} onChange={(e) => setTelefonoPrincipal(e.target.value)} />
-            </Box>
-            
-            <Box sx={{ mb: 2.5 }}>
-              <TextField label="Dirección Física" fullWidth multiline rows={2} value={direccion} onChange={(e) => setDireccion(e.target.value)} />
-            </Box>
-            
-            <TextField label="Notas Jurídicas Iniciales" fullWidth multiline rows={2} value={notas} onChange={(e) => setNotas(e.target.value)} />
-          </DialogContent>
-          <DialogActions sx={{ p: 2.5 }}>
-            <Button onClick={() => setOpenModal(false)} color="inherit">Cancelar</Button>
-            <Button type="submit" variant="contained">Registrar en el Caso</Button>
-          </DialogActions>
-        </Box>
+        <DialogContent dividers>
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2.5 }}>
+            <TextField label="Nombres" required fullWidth value={nombres} onChange={(e) => setNombres(e.target.value)} />
+            <TextField label="Apellidos" required fullWidth value={apellidos} onChange={(e) => setApellidos(e.target.value)} />
+          </Box>
+          
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2.5 }}>
+            <FormControl fullWidth>
+              <InputLabel>Tipo Identificación</InputLabel>
+              <Select value={tipoIdentificacion} label="Tipo Identificación" onChange={(e) => setTipoIdentificacion(e.target.value)}>
+                {DOC_TYPES.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <TextField label="Número de Identificación" required fullWidth value={identificacion} onChange={(e) => setIdentificacion(e.target.value)} />
+          </Box>
+          
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2.5 }}>
+            <FormControl fullWidth>
+              <InputLabel>País de Residencia</InputLabel>
+              <Select 
+                value={pais} 
+                label="País de Residencia" 
+                onChange={(e) => { 
+                  setPais(e.target.value); 
+                  const c = COUNTRIES.find(x => x.name === e.target.value); 
+                  if (c) setCodigoTelefonoPrincipal(c.phone); 
+                }}
+              >
+                {COUNTRIES.map(c => <MenuItem key={c.code} value={c.name}>{c.name}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <TextField label="Email Principal" type="email" required fullWidth value={correoPrincipal} onChange={(e) => setCorreoPrincipal(e.target.value)} />
+          </Box>
+          
+          <Box sx={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 2, mb: 2.5 }}>
+            <FormControl fullWidth>
+              <InputLabel>Código</InputLabel>
+              <Select value={codigoTelefonoPrincipal} label="Código" onChange={(e) => setCodigoTelefonoPrincipal(e.target.value)}>
+                {COUNTRIES.map(c => <MenuItem key={c.code} value={c.phone}>{`${c.code} (${c.phone})`}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <TextField label="Número Telefónico Principal" fullWidth value={telefonoPrincipal} onChange={(e) => setTelefonoPrincipal(e.target.value)} />
+          </Box>
+          
+          <Box sx={{ mb: 2.5 }}>
+            <TextField label="Dirección Física" fullWidth multiline rows={2} value={direccion} onChange={(e) => setDireccion(e.target.value)} />
+          </Box>
+          
+          <TextField label="Notas Jurídicas Iniciales" fullWidth multiline rows={2} value={notas} onChange={(e) => setNotas(e.target.value)} />
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => setOpenModal(false)} color="inherit">Cancelar</Button>
+          <Button type="submit" variant="contained">Registrar en el Caso</Button>
+        </DialogActions>
       </Dialog>
 
-      {/* MODAL: CARGAR PLAZO */}
+      {/* MODAL: CARGAR PLAZO - SE ELIMINAN WRAPPERS EXTERNOS EN FAVOR DE SLOTPROPS DE CORRECCIÓN ARIA */}
       <Dialog 
         open={openPlazoModal} 
         onClose={() => setOpenPlazoModal(false)} 
         fullWidth 
         maxWidth="xs" 
-        disableEnforceFocus
-        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+        slotProps={{ 
+          paper: { 
+            component: 'form',
+            onSubmit: handleAgregarPlazo,
+            sx: { borderRadius: 3 } 
+          } 
+        }}
       >
         <DialogTitle fontWeight="bold">Cargar Término Procesal</DialogTitle>
-        <Box component="form" onSubmit={handleAgregarPlazo}>
-          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <TextField label="Descripción del Término (Ej: Recurso de Apelación)" fullWidth required value={descripcionPlazo} onChange={e => setDescripcionPlazo(e.target.value)} />
-            <TextField label="Fecha Límite Judicial (Fecha Fatal)" type="date" fullWidth required slotProps={{ inputLabel: { shrink: true } }} value={fechaFatalInput} onChange={e => setFechaFatalInput(e.target.value)} />
-          </DialogContent>
-          <DialogActions sx={{ p: 2.5 }}>
-            <Button onClick={() => setOpenPlazoModal(false)} color="inherit" sx={{ textTransform: 'none' }}>Cancelar</Button>
-            <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }}>Cargar Término</Button>
-          </DialogActions>
-        </Box>
+        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <TextField label="Descripción del Término (Ej: Recurso de Apelación)" fullWidth required value={descripcionPlazo} onChange={e => setDescripcionPlazo(e.target.value)} />
+          <TextField label="Fecha Límite Judicial (Fecha Fatal)" type="date" fullWidth required slotProps={{ inputLabel: { shrink: true } }} value={fechaFatalInput} onChange={e => setFechaFatalInput(e.target.value)} />
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => setOpenPlazoModal(false)} color="inherit" sx={{ textTransform: 'none' }}>Cancelar</Button>
+          <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }}>Cargar Término</Button>
+        </DialogActions>
       </Dialog>
 
       {/* MODAL INTERMEDIO: INGRESO DE METADATOS PARA EL DOCUMENTO COMÚN */}
@@ -1126,23 +1143,26 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         onClose={() => { if (!uploadingDoc) { setOpenUploadModal(false); setFileComunSeleccionado(null); } }} 
         fullWidth 
         maxWidth="xs" 
-        disableEnforceFocus
-        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+        slotProps={{ 
+          paper: { 
+            component: 'form',
+            onSubmit: handleConfirmarSubidaComun,
+            sx: { borderRadius: 3 } 
+          } 
+        }}
       >
-        <Box component="form" onSubmit={handleConfirmarSubidaComun}>
-          <DialogTitle fontWeight="bold">Metadatos del Documento Común</DialogTitle>
-          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <Typography variant="body2" color="text.secondary">
-              Archivo detectado: <strong>{fileComunSeleccionado?.name}</strong>
-            </Typography>
-            <TextField label="Descripción Material del Documento" fullWidth required value={descripcionComun} onChange={e => setDescripcionComun(e.target.value)} />
-            <TextField label="Fecha de Emisión del Documento" type="date" fullWidth required slotProps={{ inputLabel: { shrink: true } }} value={fechaDocumentoComun} onChange={e => setFechaDocumentoComun(e.target.value)} />
-          </DialogContent>
-          <DialogActions sx={{ p: 2.5 }}>
-            <Button onClick={() => { setOpenUploadModal(false); setFileComunSeleccionado(null); }} color="inherit" sx={{ textTransform: 'none' }}>Cancelar</Button>
-            <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }}>Subir Documento</Button>
-          </DialogActions>
-        </Box>
+        <DialogTitle fontWeight="bold">Metadatos del Documento Común</DialogTitle>
+        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <Typography variant="body2" color="text.secondary">
+            Archivo detectado: <strong>{fileComunSeleccionado?.name}</strong>
+          </Typography>
+          <TextField label="Descripción Material del Documento" fullWidth required value={descripcionComun} onChange={e => setDescripcionComun(e.target.value)} />
+          <TextField label="Fecha de Emisión del Documento" type="date" fullWidth required slotProps={{ inputLabel: { shrink: true } }} value={fechaDocumentoComun} onChange={e => setFechaDocumentoComun(e.target.value)} />
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => { setOpenUploadModal(false); setFileComunSeleccionado(null); }} color="inherit" sx={{ textTransform: 'none' }}>Cancelar</Button>
+          <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }}>Subir Documento</Button>
+        </DialogActions>
       </Dialog>
 
       {/* MODAL: RESOLVER PLAZO CON ARCHIVO PROBATORIO Y METADATOS OBLIGATORIOS */}
@@ -1151,47 +1171,50 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         onClose={() => { if (!uploadingPlazoDoc) { setOpenCerrarModal(false); setFileProbatorio(null); } }} 
         fullWidth 
         maxWidth="xs" 
-        disableEnforceFocus
-        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+        slotProps={{ 
+          paper: { 
+            component: 'form',
+            onSubmit: handleConfirmarCierrePlazo,
+            sx: { borderRadius: 3 } 
+          } 
+        }}
       >
-        <Box component="form" onSubmit={handleConfirmarCierrePlazo}>
-          <DialogTitle fontWeight="bold">Subsanar y Cargar Documento Probatorio</DialogTitle>
-          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <Typography variant="body2" color="text.secondary">
-              Para dar por solventado este plazo ante instancias internacionales, debe anexar obligatoriamente el documento sustentatorio en formato digital.
-            </Typography>
-            
-            <Button 
-              variant="outlined" 
-              component="label" 
-              startIcon={<Upload size={18} />} 
-              disabled={uploadingPlazoDoc} 
-              fullWidth
-              sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold', py: 1.5 }}
-            >
-              {fileProbatorio ? fileProbatorio.name : 'Seleccionar Documento Probatorio'}
-              <input type="file" accept="application/pdf,image/*" hidden required onChange={(e) => setFileProbatorio(e.target.files[0])} />
-            </Button>
+        <DialogTitle fontWeight="bold">Subsanar y Cargar Documento Probatorio</DialogTitle>
+        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <Typography variant="body2" color="text.secondary">
+            Para dar por solventado este plazo ante instancias internacionales, debe anexar obligatoriamente el documento sustentatorio en formato digital.
+          </Typography>
+          
+          <Button 
+            variant="outlined" 
+            component="label" 
+            startIcon={<Upload size={18} />} 
+            disabled={uploadingPlazoDoc} 
+            fullWidth
+            sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold', py: 1.5 }}
+          >
+            {fileProbatorio ? fileProbatorio.name : 'Seleccionar Documento Probatorio'}
+            <input type="file" accept="application/pdf,image/*" hidden required onChange={(e) => setFileProbatorio(e.target.files[0])} />
+          </Button>
 
-            <TextField label="Descripción Completa de la Prueba" fullWidth required disabled={uploadingPlazoDoc} value={descripcionProbatorio} onChange={e => setDescripcionProbatorio(e.target.value)} />
-            <TextField label="Fecha de Emisión de la Prueba" type="date" fullWidth required disabled={uploadingPlazoDoc} slotProps={{ inputLabel: { shrink: true } }} value={fechaDocumentoProbatorio} onChange={e => setFechaDocumentoProbatorio(e.target.value)} />
+          <TextField label="Descripción Completa de la Prueba" fullWidth required disabled={uploadingPlazoDoc} value={descripcionProbatorio} onChange={e => setDescripcionProbatorio(e.target.value)} />
+          <TextField label="Fecha de Emisión de la Prueba" type="date" fullWidth required disabled={uploadingPlazoDoc} slotProps={{ inputLabel: { shrink: true } }} value={fechaDocumentoProbatorio} onChange={e => setFechaDocumentoProbatorio(e.target.value)} />
 
-            {uploadingPlazoDoc && (
-              <Box sx={{ width: '100%', mt: 1 }}>
-                <LinearProgress variant="determinate" value={uploadProgressPlazoDoc} />
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 0.5 }}>
-                  Subiendo archivo... {uploadProgressPlazoDoc}%
-                </Typography>
-              </Box>
-            )}
-          </DialogContent>
-          <DialogActions sx={{ p: 2.5 }}>
-            <Button onClick={() => { setOpenCerrarModal(false); setFileProbatorio(null); }} color="inherit" sx={{ textTransform: 'none' }} disabled={uploadingPlazoDoc}>Abortar</Button>
-            <Button type="submit" variant="contained" color="success" sx={{ textTransform: 'none', fontWeight: 'bold' }} disabled={uploadingPlazoDoc || !fileProbatorio}>
-              {uploadingPlazoDoc ? 'Procesando...' : 'Registrar Presentación'}
-            </Button>
-          </DialogActions>
-        </Box>
+          {uploadingPlazoDoc && (
+            <Box sx={{ width: '100%', mt: 1 }}>
+              <LinearProgress variant="determinate" value={uploadProgressPlazoDoc} />
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 0.5 }}>
+                Subiendo archivo... {uploadProgressPlazoDoc}%
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => { setOpenCerrarModal(false); setFileProbatorio(null); }} color="inherit" sx={{ textTransform: 'none' }} disabled={uploadingPlazoDoc}>Abortar</Button>
+          <Button type="submit" variant="contained" color="success" sx={{ textTransform: 'none', fontWeight: 'bold' }} disabled={uploadingPlazoDoc || !fileProbatorio}>
+            {uploadingPlazoDoc ? 'Procesando...' : 'Registrar Presentación'}
+          </Button>
+        </DialogActions>
       </Dialog>
 
       {/* MODAL: REDACTAR COMUNICADO MASIVO */}
@@ -1200,46 +1223,49 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         onClose={() => { if (!uploadingComunicado) { setOpenComunicadoModal(false); setFileComunicado(null); } }} 
         fullWidth 
         maxWidth="sm" 
-        disableEnforceFocus
-        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+        slotProps={{ 
+          paper: { 
+            component: 'form',
+            onSubmit: handleCreateComunicado,
+            sx: { borderRadius: 3 } 
+          } 
+        }}
       >
-        <Box component="form" onSubmit={handleCreateComunicado}>
-          <DialogTitle fontWeight="bold">Redactar y Registrar Comunicado Masivo</DialogTitle>
-          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <Typography variant="body2" color="text.secondary">
-              El texto y archivo PDF aquí registrados servirán de plantilla e historial de envíos masivos para los representados de este litigio.
-            </Typography>
-            <TextField label="Asunto del Correo / Comunicado" fullWidth required disabled={uploadingComunicado} value={asuntoComunicado} onChange={e => setAsuntoComunicado(e.target.value)} />
-            <TextField label="Cuerpo del Mensaje (Texto del Email)" fullWidth multiline rows={6} required disabled={uploadingComunicado} value={cuerpoComunicado} onChange={e => setCuerpoComunicado(e.target.value)} />
-            
-            <Button 
-              variant="outlined" 
-              component="label" 
-              startIcon={<Upload size={18} />} 
-              disabled={uploadingComunicado} 
-              fullWidth
-              sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold', py: 1.5 }}
-            >
-              {fileComunicado ? fileComunicado.name : 'Adjuntar Documento del Comunicado (PDF)'}
-              <input type="file" accept="application/pdf" hidden required onChange={(e) => setFileComunicado(e.target.files[0])} />
-            </Button>
+        <DialogTitle fontWeight="bold">Redactar y Registrar Comunicado Masivo</DialogTitle>
+        <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <Typography variant="body2" color="text.secondary">
+            El texto y archivo PDF aquí registrados servirán de plantilla e historial de envíos masivos para los representados de este litigio.
+          </Typography>
+          <TextField label="Asunto del Correo / Comunicado" fullWidth required disabled={uploadingComunicado} value={asuntoComunicado} onChange={e => setAsuntoComunicado(e.target.value)} />
+          <TextField label="Cuerpo del Mensaje (Texto del Email)" fullWidth multiline rows={6} required disabled={uploadingComunicado} value={cuerpoComunicado} onChange={e => setCuerpoComunicado(e.target.value)} />
+          
+          <Button 
+            variant="outlined" 
+            component="label" 
+            startIcon={<Upload size={18} />} 
+            disabled={uploadingComunicado} 
+            fullWidth
+            sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold', py: 1.5 }}
+          >
+            {fileComunicado ? fileComunicado.name : 'Adjuntar Documento del Comunicado (PDF)'}
+            <input type="file" accept="application/pdf" hidden required onChange={(e) => setFileComunicado(e.target.files[0])} />
+          </Button>
 
-            {uploadingComunicado && (
-              <Box sx={{ width: '100%', mt: 1 }}>
-                <LinearProgress variant="determinate" value={uploadProgressComunicado} />
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 0.5 }}>
-                  Subiendo circular... {uploadProgressComunicado}%
-                </Typography>
-              </Box>
-            )}
-          </DialogContent>
-          <DialogActions sx={{ p: 2.5 }}>
-            <Button onClick={() => { setOpenComunicadoModal(false); setFileComunicado(null); }} color="inherit" sx={{ textTransform: 'none' }} disabled={uploadingComunicado}>Cancelar</Button>
-            <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }} disabled={uploadingComunicado || !fileComunicado}>
-              {uploadingComunicado ? 'Procesando...' : 'Registrar Comunicado'}
-            </Button>
-          </DialogActions>
-        </Box>
+          {uploadingComunicado && (
+            <Box sx={{ width: '100%', mt: 1 }}>
+              <LinearProgress variant="determinate" value={uploadProgressComunicado} />
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 0.5 }}>
+                Subiendo circular... {uploadProgressComunicado}%
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2.5 }}>
+          <Button onClick={() => { setOpenComunicadoModal(false); setFileComunicado(null); }} color="inherit" sx={{ textTransform: 'none' }} disabled={uploadingComunicado}>Cancelar</Button>
+          <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }} disabled={uploadingComunicado || !fileComunicado}>
+            {uploadingComunicado ? 'Procesando...' : 'Registrar Comunicado'}
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );
