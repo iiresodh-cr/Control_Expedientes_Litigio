@@ -63,7 +63,8 @@ import {
   Trash2,
   Clock,
   Calendar,
-  Search
+  Search,
+  Mail
 } from 'lucide-react';
 import FichaCliente from './FichaCliente';
 import { registrarLogAuditoria } from '../utils/auditLogger';
@@ -171,6 +172,16 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
+  // Estados locales para la sección de comunicados masivos enviados
+  const [comunicados, setComunicados] = useState([]);
+  const [loadingComunicados, setLoadingComunicados] = useState(false);
+  const [openComunicadoModal, setOpenComunicadoModal] = useState(false);
+  const [asuntoComunicado, setAsuntoComunicado] = useState('');
+  const [cuerpoComunicado, setCuerpoComunicado] = useState('');
+  const [fileComunicado, setFileComunicado] = useState(null);
+  const [uploadingComunicado, setUploadingComunicado] = useState(false);
+  const [uploadProgressComunicado, setUploadProgressComunicado] = useState(0);
+
   const fetchClientes = async () => {
     setLoading(true);
     setError('');
@@ -202,10 +213,24 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     }
   };
 
+  const fetchComunicados = async () => {
+    setLoadingComunicados(true);
+    try {
+      const comRef = collection(db, 'casos', caso.id, 'comunicados');
+      const snapshot = await getDocs(query(comRef, orderBy('fecha_envio', 'desc')));
+      setComunicados(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingComunicados(false);
+    }
+  };
+
   useEffect(() => {
     setLocalPlazos(caso.plazos || []);
     fetchClientes();
     fetchDocsComunes();
+    fetchComunicados();
   }, [caso.id, caso.plazos]);
 
   const handleCreateCliente = async (e) => {
@@ -467,6 +492,61 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     );
   };
 
+  const handleCreateComunicado = async (e) => {
+    e.preventDefault();
+    if (!asuntoComunicado.trim() || !cuerpoComunicado.trim() || !fileComunicado) return;
+
+    setUploadingComunicado(true);
+    setUploadProgressComunicado(0);
+    setError('');
+
+    const storagePath = `casos/${caso.id}/documentos/${Date.now()}_${fileComunicado.name}`;
+    const storageRef = ref(storage, storagePath);
+    const uploadTask = uploadBytesResumable(storageRef, fileComunicado);
+
+    uploadTask.on('state_changed', 
+      (snap) => {
+        const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
+        setUploadProgressComunicado(Math.round(progress));
+      },
+      (err) => {
+        setError('Error al subir el archivo del comunicado.');
+        setUploadingComunicado(false);
+      },
+      async () => {
+        try {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+
+          await addDoc(collection(db, 'casos', caso.id, 'comunicados'), {
+            asunto: asuntoComunicado.trim(),
+            cuerpo: cuerpoComunicado.trim(),
+            pdf_nombre: fileComunicado.name,
+            pdf_url: downloadURL,
+            storage_path: storagePath,
+            fecha_envio: new Date().toISOString(),
+            enviado_por: currentUserEmail
+          });
+
+          await registrarLogAuditoria(
+            currentUserEmail,
+            'Envío de Comunicado',
+            `Se registró comunicado masivo: "${asuntoComunicado.trim()}" con adjunto PDF: "${fileComunicado.name}"`
+          );
+
+          setAsuntoComunicado('');
+          setCuerpoComunicado('');
+          setFileComunicado(null);
+          setOpenComunicadoModal(false);
+          fetchComunicados();
+        } catch (ex) {
+          setError('Error al registrar los metadatos del comunicado.');
+        } finally {
+          setUploadingComunicado(false);
+        }
+      }
+    );
+  };
+
   const semaforoGeneral = (() => {
     const plazosActivos = localPlazos.filter(p => !p.completado);
     if (plazosActivos.length === 0) return null;
@@ -489,7 +569,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     return { label: `${diasRestantes} días libres`, color: '#15803d' };
   })();
 
-  // FILTRADO EN MEMORIA JAVASCRIPT: Evalúa consultas atómicas concurrentes sin golpear Firebase
   const clientesFiltrados = clientes.filter(c => {
     const queryTerm = searchQuery.toLowerCase().trim();
     if (!queryTerm) return true;
@@ -507,7 +586,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
            correoElectronico.includes(queryTerm);
   });
 
-  // PAGINACIÓN ARITMÉTICA DE SEGMENTOS
   const clientesPaginados = clientesFiltrados.slice(page * rowsPerPage, (page * rowsPerPage) + rowsPerPage);
 
   if (clienteSeleccionadoId) {
@@ -555,10 +633,11 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
               color: semaforoGeneral ? semaforoGeneral.color : 'inherit' 
             }} 
           />
+          <Tab icon={<Mail size={18} />} iconPosition="start" label="Comunicados Enviados" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
         </Tabs>
       </Box>
 
-      {/* PESTAÑA 1: RECONSTRUCCIÓN VERTICAL TABLA DE REPRESETADOS (CON BÚSQUEDA Y PAGINACIÓN) */}
+      {/* PESTAÑA 1: RECONSTRUCCIÓN VERTICAL TABLA DE REPRESETADOS */}
       <TabPanel value={activeTab} index={0}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h6" fontWeight="bold">Representados en el Litigio</Typography>
@@ -572,7 +651,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           </Button>
         </Box>
 
-        {/* CONTENEDOR DE LA CAJA DE BÚSQUEDA PREDICTIVA */}
         <Box sx={{ mb: 3 }}>
           <TextField
             fullWidth
@@ -582,7 +660,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
-              setPage(0); // Reiniciar de forma segura la paginación ante cada nueva consulta
+              setPage(0);
             }}
             InputProps={{
               startAdornment: (
@@ -657,7 +735,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
               </Table>
             </TableContainer>
 
-            {/* BARRA REGULADORA DE PAGINACIÓN INSTITUCIONAL */}
             <TablePagination
               rowsPerPageOptions={[10, 25, 50]}
               component="div"
@@ -874,6 +951,61 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Paper>
       </TabPanel>
 
+      {/* PESTAÑA 5: COMUNICADOS ENVIADOS (BITÁCORA DE MAILING MASIVO) */}
+      <TabPanel value={activeTab} index={4}>
+        <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Box>
+              <Typography variant="h6" fontWeight="bold">Historial de Comunicados Masivos</Typography>
+              <Typography variant="body2" color="text.secondary">Registro de circulares y comunicados enviados por correo a los representados.</Typography>
+            </Box>
+            <Button 
+              variant="contained" 
+              startIcon={<Plus size={18} />} 
+              onClick={() => setOpenComunicadoModal(true)} 
+              sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold' }}
+            >
+              Redactar Comunicado
+            </Button>
+          </Box>
+
+          {loadingComunicados ? (
+            <CircularProgress />
+          ) : comunicados.length === 0 ? (
+            <Alert severity="info">No se registran comunicados masivos enviados para este litigio.</Alert>
+          ) : (
+            <List>
+              {comunicados.map((c) => (
+                <ListItem key={c.id} disablePadding sx={{ mb: 2, p: 2, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0', display: 'block' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                    <Box>
+                      <Typography variant="subtitle1" fontWeight="bold" color="primary.main">{c.asunto}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {`Enviado por: ${c.enviado_por} | Fecha: ${c.fecha_envio ? new Date(c.fecha_envio).toLocaleString() : ''}`}
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Typography variant="body2" sx={{ my: 1.5, whiteSpace: 'pre-wrap', color: 'text.primary' }}>{c.cuerpo}</Typography>
+                  <Divider sx={{ my: 1 }} />
+                  <Button
+                    component="a"
+                    href={c.pdf_url}
+                    target="_blank"
+                    rel="noopener"
+                    variant="text"
+                    size="small"
+                    startIcon={<File size={14} />}
+                    sx={{ textTransform: 'none', fontWeight: 'bold', p: 0 }}
+                  >
+                    {c.pdf_nombre || 'Ver Documento Adjunto (PDF)'}
+                  </Button>
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </Paper>
+      </TabPanel>
+
       {/* MODAL DE AGREGAR CLIENTE EXTENDIDO */}
       <Dialog open={openModal} onClose={() => setOpenModal(false)} fullWidth maxWidth="sm" slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
         <DialogTitle fontWeight="bold">Nueva Ficha de Cliente</DialogTitle>
@@ -1017,6 +1149,53 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
             <Button onClick={() => { setOpenCerrarModal(false); setFileProbatorio(null); }} color="inherit" sx={{ textTransform: 'none' }} disabled={uploadingPlazoDoc}>Abortar</Button>
             <Button type="submit" variant="contained" color="success" sx={{ textTransform: 'none', fontWeight: 'bold' }} disabled={uploadingPlazoDoc || !fileProbatorio}>
               {uploadingPlazoDoc ? 'Procesando...' : 'Registrar Presentación'}
+            </Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
+
+      {/* MODAL: REDACTAR COMUNICADO MASIVO */}
+      <Dialog 
+        open={openComunicadoModal} 
+        onClose={() => { if (!uploadingComunicado) { setOpenComunicadoModal(false); setFileComunicado(null); } }} 
+        fullWidth 
+        maxWidth="sm" 
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+      >
+        <Box component="form" onSubmit={handleCreateComunicado}>
+          <DialogTitle fontWeight="bold">Redactar y Registrar Comunicado Masivo</DialogTitle>
+          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              El texto y archivo PDF aquí registrados servirán de plantilla e historial de envíos masivos para los representados de este litigio.
+            </Typography>
+            <TextField label="Asunto del Correo / Comunicado" fullWidth required disabled={uploadingComunicado} value={asuntoComunicado} onChange={e => setAsuntoComunicado(e.target.value)} />
+            <TextField label="Cuerpo del Mensaje (Texto del Email)" fullWidth multiline rows={6} required disabled={uploadingComunicado} value={cuerpoComunicado} onChange={e => setCuerpoComunicado(e.target.value)} />
+            
+            <Button 
+              variant="outlined" 
+              component="label" 
+              startIcon={<Upload size={18} />} 
+              disabled={uploadingComunicado} 
+              fullWidth
+              sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold', py: 1.5 }}
+            >
+              {fileComunicado ? fileComunicado.name : 'Adjuntar Documento del Comunicado (PDF)'}
+              <input type="file" accept="application/pdf" hidden required onChange={(e) => setFileComunicado(e.target.files[0])} />
+            </Button>
+
+            {uploadingComunicado && (
+              <Box sx={{ width: '100%', mt: 1 }}>
+                <LinearProgress variant="determinate" value={uploadProgressComunicado} />
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 0.5 }}>
+                  Subiendo circular... {uploadProgressComunicado}%
+                </Typography>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ p: 2.5 }}>
+            <Button onClick={() => { setOpenComunicadoModal(false); setFileComunicado(null); }} color="inherit" sx={{ textTransform: 'none' }} disabled={uploadingComunicado}>Cancelar</Button>
+            <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }} disabled={uploadingComunicado || !fileComunicado}>
+              {uploadingComunicado ? 'Procesando...' : 'Registrar Comunicado'}
             </Button>
           </DialogActions>
         </Box>
