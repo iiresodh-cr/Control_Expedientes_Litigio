@@ -154,6 +154,9 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [uploadingPlazoDoc, setUploadingPlazoDoc] = useState(false);
   const [uploadProgressPlazoDoc, setUploadProgressPlazoDoc] = useState(0);
 
+  // Estado para el área de arrastre (Drag and Drop)
+  const [isDragging, setIsDragging] = useState(false);
+
   const fetchClientes = async () => {
     setLoading(true);
     setError('');
@@ -239,15 +242,17 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     }
   };
 
-  const handleUploadDocComun = async (e) => {
-    const file = e.target.files[0];
+  // =====================================================================================
+  // MOTOR UNIFICADO DE CARGA: Almacena físicamente en la subcarpeta única /documentos/
+  // =====================================================================================
+  const ejecutarCargaArchivoComun = async (file) => {
     if (!file) return;
 
     setUploadingDoc(true);
     setUploadProgressDoc(0);
     setError('');
 
-    const storagePath = `casos/${caso.id}/documentos_comunes/${Date.now()}_${file.name}`;
+    const storagePath = `casos/${caso.id}/documentos/${Date.now()}_${file.name}`;
     const storageRef = ref(storage, storagePath);
     const uploadTask = uploadBytesResumable(storageRef, file);
 
@@ -281,6 +286,18 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     );
   };
 
+  const handleUploadDocComun = async (e) => {
+    const file = e.target.files[0];
+    if (file) await ejecutarCargaArchivoComun(file);
+  };
+
+  const handleDropDocComun = async (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) await ejecutarCargaArchivoComun(file);
+  };
+
   const handleDeleteDocComun = async (docId, storagePath) => {
     if (!window.confirm('¿Desea eliminar este documento global del caso?')) return;
     try {
@@ -310,7 +327,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       id: 'plazo_' + Date.now(),
       descripcion: descripcionPlazo.trim(),
       fechaFatal: fechaFatalInput,
-      responsable: responsablePlazo.trim(),
+      responsable: ExtractorResponsable = responsablePlazo.trim(),
       completado: false,
       fechaPresentacion: '',
       documentoProbatorioNombre: '',
@@ -348,7 +365,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     setUploadProgressPlazoDoc(0);
     setError('');
 
-    const storagePath = `casos/${caso.id}/documentos_comunes/${Date.now()}_${fileProbatorio.name}`;
+    const storagePath = `casos/${caso.id}/documentos/${Date.now()}_${fileProbatorio.name}`;
     const storageRef = ref(storage, storagePath);
     const uploadTask = uploadBytesResumable(storageRef, fileProbatorio);
 
@@ -365,7 +382,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         try {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
-          // 1. Inyectar en Documentos Comunes automáticamente
           await addDoc(collection(db, 'casos', caso.id, 'documentos_comunes'), {
             nombre: fileProbatorio.name,
             url: downloadURL,
@@ -373,7 +389,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
             fecha_subida: new Date().toISOString()
           });
 
-          // 2. Modificar el estatus del término procesal
           const plazosModificados = localPlazos.map(p => {
             if (p.id === plazoAActivar.id) {
               return {
@@ -411,9 +426,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     );
   };
 
-  // =====================================================================================
-  // MOTOR DEL SEMÁFORO INTERNO: Sincroniza el estatus dinámico de las pestañas
-  // =====================================================================================
   const semaforoGeneral = (() => {
     const plazosActivos = localPlazos.filter(p => !p.completado);
     if (plazosActivos.length === 0) return null;
@@ -471,7 +483,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           <Tab icon={<Users size={18} />} iconPosition="start" label="Fichas de Clientes" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
           <Tab icon={<FileText size={18} />} iconPosition="start" label="Documentos Comunes" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
           <Tab icon={<CreditCard size={18} />} iconPosition="start" label="Control de Pagos" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
-          {/* COLORACIÓN DINÁMICA: Aplica estilos según criticidad en la pestaña */}
           <Tab 
             icon={<Clock size={18} style={{ color: semaforoGeneral ? semaforoGeneral.color : 'inherit' }} />} 
             iconPosition="start" 
@@ -561,12 +572,25 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         )}
       </TabPanel>
 
-      {/* PESTAÑA 2: DOCUMENTOS COMUNES */}
+      {/* PESTAÑA 2: DOCUMENTOS COMUNES (INTEGRA RECEPTOR DRAG AND DROP) */}
       <TabPanel value={activeTab} index={1}>
-        <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+        <Paper 
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDropDocComun}
+          sx={{ 
+            p: 3, 
+            borderRadius: 3, 
+            border: isDragging ? '2px dashed #1a365d' : '1px solid #e2e8f0', 
+            bgcolor: isDragging ? '#f0f4f8' : '#ffffff',
+            boxShadow: 'none',
+            transition: 'all 0.2s ease'
+          }}
+        >
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
             <Box>
               <Typography variant="h6" fontWeight="bold">Escritos y Respuestas de Instancias Internacionales</Typography>
+              <Typography variant="caption" color="text.secondary">Puede arrastrar y soltar archivos PDF directamente sobre este panel.</Typography>
             </Box>
             <Button 
               variant="contained" 
@@ -660,7 +684,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                     <TableCell sx={{ fontWeight: 'bold' }}>Fecha Límite</TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>Responsable</TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>Estatus</TableCell>
-                    {/* COLUMNA ACTUALIZADA BAJO CRITERIOS INTERNACIONALES */}
                     <TableCell sx={{ fontWeight: 'bold' }}>Documento Probatorio</TableCell>
                     <TableCell sx={{ fontWeight: 'bold', textAlign: 'center' }}>Acción</TableCell>
                   </TableRow>
@@ -687,7 +710,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                         <TableCell sx={{ fontWeight: 'bold', color: '#b91c1c' }}>{plazo.fechaFatal}</TableCell>
                         <TableCell>{plazo.responsable}</TableCell>
                         <TableCell><Chip label={cfg.label} color={cfg.colorChip} size="small" sx={{ fontWeight: 'bold' }} /></TableCell>
-                        {/* ENLACE DIRECTO AL ARCHIVO EN STORAGE */}
                         <TableCell sx={{ fontSize: '0.8rem' }}>
                           {plazo.completado ? (
                             <Button
