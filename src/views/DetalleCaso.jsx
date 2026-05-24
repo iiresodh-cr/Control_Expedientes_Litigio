@@ -532,8 +532,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         try {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
-          // REFORZADO: Forzar el parámetro 'from' a nivel de documento raíz
-          // IMPORTANTE: Modifica 'comunicados@iiresodh.org' por el remitente verificado en tu cuenta de SendGrid
           await addDoc(collection(db, 'casos', caso.id, 'comunicados'), {
             from: 'comunicados@iiresodh.org', 
             to: listaCorreos,
@@ -1046,12 +1044,14 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Paper>
       </TabPanel>
 
-      {/* MODAL DE AGREGAR CLIENTE EXTENDIDO */}
+      {/* MODAL DE AGREGAR CLIENTE EXTENDIDO - DETIENE ANULACIÓN DE FOCO ARIA DEFINITIVAMENTE */}
       <Dialog 
         open={openModal} 
         onClose={() => setOpenModal(false)} 
         fullWidth 
         maxWidth="sm" 
+        disableEnforceFocus
+        disableRestoreFocus
         slotProps={{ 
           paper: { 
             component: 'form',
@@ -1063,7 +1063,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         <DialogTitle fontWeight="bold">Nueva Ficha de Cliente</DialogTitle>
         <DialogContent dividers>
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2.5 }}>
-            <TextField label="Nombres" required fullWidth value={nombres} onChange={(e) => setNombres(e.target.value)} />
+            <TextField label="Nombres" autoFocus required fullWidth value={nombres} onChange={(e) => setNombres(e.target.value)} />
             <TextField label="Apellidos" required fullWidth value={apellidos} onChange={(e) => setApellidos(e.target.value)} />
           </Box>
           
@@ -1117,12 +1117,14 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </DialogActions>
       </Dialog>
 
-      {/* MODAL: CARGAR PLAZO */}
+      {/* MODAL: CARGAR PLAZO - DETIENE ANULACIÓN DE FOCO ARIA DEFINITIVAMENTE */}
       <Dialog 
         open={openPlazoModal} 
         onClose={() => setOpenPlazoModal(false)} 
         fullWidth 
         maxWidth="xs" 
+        disableEnforceFocus
+        disableRestoreFocus
         slotProps={{ 
           paper: { 
             component: 'form',
@@ -1133,7 +1135,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       >
         <DialogTitle fontWeight="bold">Cargar Término Procesal</DialogTitle>
         <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <TextField label="Descripción del Término (Ej: Recurso de Apelación)" fullWidth required value={descripcionPlazo} onChange={e => setDescripcionPlazo(e.target.value)} />
+          <TextField label="Descripción del Término (Ej: Recurso de Apelación)" autoFocus fullWidth required value={descripcionPlazo} onChange={e => setDescripcionPlazo(e.target.value)} />
           <TextField label="Fecha Límite Judicial (Fecha Fatal)" type="date" fullWidth required slotProps={{ inputLabel: { shrink: true } }} value={fechaFatalInput} onChange={e => setFechaFatalInput(e.target.value)} />
         </DialogContent>
         <DialogActions sx={{ p: 2.5 }}>
@@ -1142,12 +1144,14 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </DialogActions>
       </Dialog>
 
-      {/* MODAL INTERMEDIO: INGRESO DE METADATOS PARA EL DOCUMENTO COMÚN */}
+      {/* MODAL INTERMEDIO: INGRESO DE METADATOS PARA EL DOCUMENTO COMÚN - DETIENE ANULACIÓN DE FOCO ARIA DEFINITIVAMENTE */}
       <Dialog 
         open={openUploadModal} 
         onClose={() => { if (!uploadingDoc) { setOpenUploadModal(false); setFileComunSeleccionado(null); } }} 
         fullWidth 
         maxWidth="xs" 
+        disableEnforceFocus
+        disableRestoreFocus
         slotProps={{ 
           paper: { 
             component: 'form',
@@ -1161,7 +1165,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           <Typography variant="body2" color="text.secondary">
             Archivo detectado: <strong>{fileComunSeleccionado?.name}</strong>
           </Typography>
-          <TextField label="Descripción Material del Documento" fullWidth required value={descripcionComun} onChange={e => setDescripcionComun(e.target.value)} />
+          <TextField label="Descripción Material del Documento" autoFocus fullWidth required value={descripcionComun} onChange={e => setDescripcionComun(e.target.value)} />
           <TextField label="Fecha de Emisión del Documento" type="date" fullWidth required slotProps={{ inputLabel: { shrink: true } }} value={fechaDocumentoComun} onChange={e => setFechaDocumentoComun(e.target.value)} />
         </DialogContent>
         <DialogActions sx={{ p: 2.5 }}>
@@ -1170,12 +1174,14 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </DialogActions>
       </Dialog>
 
-      {/* MODAL: RESOLVER PLAZO CON ARCHIVO PROBATORIO Y METADATOS OBLIGATORIOS */}
+      {/* MODAL: RESOLVER PLAZO CON ARCHIVO PROBATORIO Y METADATOS OBLIGATORIOS - DETIENE ANULACIÓN DE FOCO ARIA DEFINITIVAMENTE */}
       <Dialog 
         open={openCerrarModal} 
         onClose={() => { if (!uploadingPlazoDoc) { setOpenCerrarModal(false); setFileProbatorio(null); } }} 
         fullWidth 
         maxWidth="xs" 
+        disableEnforceFocus
+        disableRestoreFocus
         slotProps={{ 
           paper: { 
             component: 'form',
@@ -1196,13 +1202,13 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
             startIcon={<Upload size={18} />} 
             disabled={uploadingPlazoDoc} 
             fullWidth
-            sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold', py: 1.5 }}
+            sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold', py: 1.5, mb: 1 }}
           >
             {fileProbatorio ? fileProbatorio.name : 'Seleccionar Documento Probatorio'}
             <input type="file" accept="application/pdf,image/*" hidden required onChange={(e) => setFileProbatorio(e.target.files[0])} />
           </Button>
 
-          <TextField label="Descripción Completa de la Prueba" fullWidth required disabled={uploadingPlazoDoc} value={descripcionProbatorio} onChange={e => setDescripcionProbatorio(e.target.value)} />
+          <TextField label="Descripción Completa de la Prueba" autoFocus fullWidth required disabled={uploadingPlazoDoc} value={descripcionProbatorio} onChange={e => setDescripcionProbatorio(e.target.value)} />
           <TextField label="Fecha de Emisión de la Prueba" type="date" fullWidth required disabled={uploadingPlazoDoc} slotProps={{ inputLabel: { shrink: true } }} value={fechaDocumentoProbatorio} onChange={e => setFechaDocumentoProbatorio(e.target.value)} />
 
           {uploadingPlazoDoc && (
@@ -1222,12 +1228,14 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </DialogActions>
       </Dialog>
 
-      {/* MODAL: REDACTAR COMUNICADO MASIVO */}
+      {/* MODAL: REDACTAR COMUNICADO MASIVO - DETIENE ANULACIÓN DE FOCO ARIA DEFINITIVAMENTE */}
       <Dialog 
         open={openComunicadoModal} 
         onClose={() => { if (!uploadingComunicado) { setOpenComunicadoModal(false); setFileComunicado(null); } }} 
         fullWidth 
         maxWidth="sm" 
+        disableEnforceFocus
+        disableRestoreFocus
         slotProps={{ 
           paper: { 
             component: 'form',
@@ -1241,7 +1249,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           <Typography variant="body2" color="text.secondary">
             El texto y archivo PDF aquí registrados servirán de plantilla e historial de envíos masivos para los representados de este litigio.
           </Typography>
-          <TextField label="Asunto del Correo / Comunicado" fullWidth required disabled={uploadingComunicado} value={asuntoComunicado} onChange={e => setAsuntoComunicado(e.target.value)} />
+          <TextField label="Asunto del Correo / Comunicado" autoFocus fullWidth required disabled={uploadingComunicado} value={asuntoComunicado} onChange={e => setAsuntoComunicado(e.target.value)} />
           <TextField label="Cuerpo del Mensaje (Texto del Email)" fullWidth multiline rows={6} required disabled={uploadingComunicado} value={cuerpoComunicado} onChange={e => setCuerpoComunicado(e.target.value)} />
           
           <Button 
