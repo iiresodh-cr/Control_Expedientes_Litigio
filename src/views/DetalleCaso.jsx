@@ -48,7 +48,8 @@ import {
   LinearProgress, 
   List, 
   ListItem, 
-  ListItemText 
+  ListItemText,
+  TablePagination
 } from '@mui/material';
 import { 
   ArrowLeft, 
@@ -61,7 +62,8 @@ import {
   File, 
   Trash2,
   Clock,
-  Calendar
+  Calendar,
+  Search
 } from 'lucide-react';
 import FichaCliente from './FichaCliente';
 import { registrarLogAuditoria } from '../utils/auditLogger';
@@ -164,6 +166,11 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [descripcionComun, setDescripcionComun] = useState('');
   const [fechaDocumentoComun, setFechaDocumentoComun] = useState('');
 
+  // Estados locales para la caja de búsqueda y la paginación masiva de representados
+  const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
   const fetchClientes = async () => {
     setLoading(true);
     setError('');
@@ -249,9 +256,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     }
   };
 
-  // =====================================================================================
-  // MOTOR UNIFICADO DE CARGA: Almacena físicamente e incorpora descripción y fecha
-  // =====================================================================================
   const ejecutarCargaArchivoComun = async (file, desc, fechaDoc) => {
     if (!file) return;
 
@@ -413,7 +417,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         try {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
-          // Inyectar en Documentos Comunes incorporando metadatos estructurados
           await addDoc(collection(db, 'casos', caso.id, 'documentos_comunes'), {
             nombre: fileProbatorio.name,
             url: downloadURL,
@@ -486,6 +489,27 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     return { label: `${diasRestantes} días libres`, color: '#15803d' };
   })();
 
+  // FILTRADO EN MEMORIA JAVASCRIPT: Evalúa consultas atómicas concurrentes sin golpear Firebase
+  const clientesFiltrados = clientes.filter(c => {
+    const queryTerm = searchQuery.toLowerCase().trim();
+    if (!queryTerm) return true;
+
+    const nombreCompleto = `${c.nombres || ''} ${c.apellidos || ''}`.toLowerCase();
+    const apellidosNombres = `${c.apellidos || ''} ${c.nombres || ''}`.toLowerCase();
+    const documento = (c.identificacion || '').toLowerCase();
+    const territorio = (c.pais || '').toLowerCase();
+    const correoElectronico = (c.correo_principal || '').toLowerCase();
+
+    return nombreCompleto.includes(queryTerm) || 
+           apellidosNombres.includes(queryTerm) || 
+           documento.includes(queryTerm) || 
+           territorio.includes(queryTerm) || 
+           correoElectronico.includes(queryTerm);
+  });
+
+  // PAGINACIÓN ARITMÉTICA DE SEGMENTOS
+  const clientesPaginados = clientesFiltrados.slice(page * rowsPerPage, (page * rowsPerPage) + rowsPerPage);
+
   if (clienteSeleccionadoId) {
     return (
       <FichaCliente 
@@ -534,7 +558,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Tabs>
       </Box>
 
-      {/* PESTAÑA 1: RECONSTRUCCIÓN VERTICAL TABLA DE REPRESETADOS */}
+      {/* PESTAÑA 1: RECONSTRUCCIÓN VERTICAL TABLA DE REPRESETADOS (CON BÚSQUEDA Y PAGINACIÓN) */}
       <TabPanel value={activeTab} index={0}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h6" fontWeight="bold">Representados en el Litigio</Typography>
@@ -548,65 +572,107 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           </Button>
         </Box>
 
+        {/* CONTENEDOR DE LA CAJA DE BÚSQUEDA PREDICTIVA */}
+        <Box sx={{ mb: 3 }}>
+          <TextField
+            fullWidth
+            size="small"
+            variant="outlined"
+            placeholder="Buscar representados por nombres, apellidos, identificación, país de residencia o correo electrónico..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(0); // Reiniciar de forma segura la paginación ante cada nueva consulta
+            }}
+            InputProps={{
+              startAdornment: (
+                <Box sx={{ display: 'flex', alignItems: 'center', mr: 1, color: 'text.secondary' }}>
+                  <Search size={18} />
+                </Box>
+              ),
+            }}
+          />
+        </Box>
+
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
-        ) : clientes.length === 0 ? (
-          <Alert severity="info" sx={{ borderRadius: 2 }}>No hay clientes registrados.</Alert>
+        ) : clientesFiltrados.length === 0 ? (
+          <Alert severity="info" sx={{ borderRadius: 2 }}>
+            {searchQuery ? 'No se localizaron registros de representados que coincidan con los criterios de búsqueda introducidos.' : 'No hay clientes registrados en este litigio.'}
+          </Alert>
         ) : (
-          <TableContainer component={Paper} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
-            <Table>
-              <TableHead sx={{ bgcolor: '#f8fafc' }}>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 'bold' }}>Apellidos y Nombres</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold' }}>Documento de Identidad</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold' }}>País</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold' }}>Contacto Principal</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold' }}>Pago Stripe</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold' }}>Acciones</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {clientes.map((clienteItem) => (
-                  <TableRow key={clienteItem.id} hover>
-                    <TableCell sx={{ fontWeight: 'medium' }}>
-                      {clienteItem.apellidos}, {clienteItem.nombres}
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">{clienteItem.identificacion}</Typography>
-                      <Typography variant="caption" color="text.secondary">{clienteItem.tipo_identificacion}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      {clienteItem.pais || 'No especificado'}
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">{clienteItem.correo_principal || 'Sin correo'}</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {clienteItem.telefono_principal ? `${clienteItem.codigo_telefono_principal} ${clienteItem.telefono_principal}` : 'Sin teléfono'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip 
-                        label={clienteItem.estado_pago} 
-                        size="small" 
-                        color={clienteItem.estado_pago === 'Pagado' ? 'success' : 'warning'} 
-                        sx={{ fontWeight: 'bold' }} 
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <IconButton 
-                        size="small" 
-                        color="primary" 
-                        title="Ver Ficha Completa" 
-                        onClick={() => setClienteSeleccionadoId(clienteItem.id)}
-                      >
-                        <Eye size={18} />
-                      </IconButton>
-                    </TableCell>
+          <>
+            <TableContainer component={Paper} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+              <Table>
+                <TableHead sx={{ bgcolor: '#f8fafc' }}>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Apellidos y Nombres</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Documento de Identidad</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>País</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Contacto Principal</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Pago Stripe</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Acciones</TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                </TableHead>
+                <TableBody>
+                  {clientesPaginados.map((clienteItem) => (
+                    <TableRow key={clienteItem.id} hover>
+                      <TableCell sx={{ fontWeight: 'medium' }}>
+                        {clienteItem.apellidos}, {clienteItem.nombres}
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{clienteItem.identificacion}</Typography>
+                        <Typography variant="caption" color="text.secondary">{clienteItem.tipo_identificacion}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        {clienteItem.pais || 'No especificado'}
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{clienteItem.correo_principal || 'Sin correo'}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {clienteItem.telefono_principal ? `${clienteItem.codigo_telefono_principal} ${clienteItem.telefono_principal}` : 'Sin teléfono'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={clienteItem.estado_pago} 
+                          size="small" 
+                          color={clienteItem.estado_pago === 'Pagado' ? 'success' : 'warning'} 
+                          sx={{ fontWeight: 'bold' }} 
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <IconButton 
+                          size="small" 
+                          color="primary" 
+                          title="Ver Ficha Completa" 
+                          onClick={() => setClienteSeleccionadoId(clienteItem.id)}
+                        >
+                          <Eye size={18} />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
+            {/* BARRA REGULADORA DE PAGINACIÓN INSTITUCIONAL */}
+            <TablePagination
+              rowsPerPageOptions={[10, 25, 50]}
+              component="div"
+              count={clientesFiltrados.length}
+              rowsPerPage={rowsPerPage}
+              page={page}
+              onPageChange={(e, newPage) => setPage(newPage)}
+              onRowsPerPageChange={(e) => {
+                setRowsPerPage(parseInt(e.target.value, 10));
+                setPage(0);
+              }}
+              labelRowsPerPage="Representados por página:"
+              labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+            />
+          </>
         )}
       </TabPanel>
 
