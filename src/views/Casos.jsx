@@ -283,7 +283,7 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
             <FormControl fullWidth>
               <InputLabel id="select-estado-caso-label">Estado Actual del Caso</InputLabel>
               <Select labelId="select-estado-caso-label" value={editEstado} label="Estado Actual del Caso" onChange={(e) => setEditEstado(e.target.value)}>
-                {ESTADOS_CASE = ESTADOS_CASO.map((status) => <MenuItem key={status} value={status}>{status}</MenuItem>)}
+                {ESTADOS_CASO.map((status) => <MenuItem key={status} value={status}>{status}</MenuItem>)}
               </Select>
             </FormControl>
           </DialogContent>
