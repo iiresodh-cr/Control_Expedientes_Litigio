@@ -145,7 +145,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [openPlazoModal, setOpenPlazoModal] = useState(false);
   const [descripcionPlazo, setDescripcionPlazo] = useState('');
   const [fechaFatalInput, setFechaFatalInput] = useState('');
-  const [responsablePlazo, setResponsiblePlazo] = useState('');
   const [openCerrarModal, setOpenCerrarModal] = useState(false);
   const [plazoAActivar, setPlazoAActivar] = useState(null);
   
@@ -242,9 +241,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     }
   };
 
-  // =====================================================================================
-  // MOTOR UNIFICADO DE CARGA: Almacena físicamente en la subcarpeta única /documentos/
-  // =====================================================================================
   const ejecutarCargaArchivoComun = async (file) => {
     if (!file) return;
 
@@ -320,14 +316,13 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
 
   const handleAgregarPlazo = async (e) => {
     e.preventDefault();
-    if (!descripcionPlazo.trim() || !fechaFatalInput || !responsablePlazo.trim()) return;
+    if (!descripcionPlazo.trim() || !fechaFatalInput) return;
 
     setError('');
     const nuevoPlazoObj = {
       id: 'plazo_' + Date.now(),
       descripcion: descripcionPlazo.trim(),
       fechaFatal: fechaFatalInput,
-      responsable: ExtractorResponsable = responsablePlazo.trim(),
       completado: false,
       fechaPresentacion: '',
       documentoProbatorioNombre: '',
@@ -350,7 +345,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       setLocalPlazos(prev => [...prev, nuevoPlazoObj]);
       setDescripcionPlazo('');
       setFechaFatalInput('');
-      setResponsiblePlazo('');
       setOpenPlazoModal(false);
     } catch (err) {
       setError('No se pudo guardar el plazo procesal.');
@@ -572,7 +566,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         )}
       </TabPanel>
 
-      {/* PESTAÑA 2: DOCUMENTOS COMUNES (INTEGRA RECEPTOR DRAG AND DROP) */}
+      {/* PESTAÑA 2: DOCUMENTOS COMUNES */}
       <TabPanel value={activeTab} index={1}>
         <Paper 
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
@@ -682,7 +676,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                   <TableRow>
                     <TableCell sx={{ fontWeight: 'bold' }}>Término Procesal / Descripción</TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>Fecha Límite</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Responsable</TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>Estatus</TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>Documento Probatorio</TableCell>
                     <TableCell sx={{ fontWeight: 'bold', textAlign: 'center' }}>Acción</TableCell>
@@ -708,7 +701,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                       <TableRow key={plazo.id} sx={{ bgcolor: cfg.bgFila }} hover>
                         <TableCell sx={{ fontWeight: 'medium', py: 1.5 }}>{plazo.descripcion}</TableCell>
                         <TableCell sx={{ fontWeight: 'bold', color: '#b91c1c' }}>{plazo.fechaFatal}</TableCell>
-                        <TableCell>{plazo.responsable}</TableCell>
                         <TableCell><Chip label={cfg.label} color={cfg.colorChip} size="small" sx={{ fontWeight: 'bold' }} /></TableCell>
                         <TableCell sx={{ fontSize: '0.8rem' }}>
                           {plazo.completado ? (
@@ -816,14 +808,13 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Box>
       </Dialog>
 
-      {/* MODAL: CARGAR PLAZO */}
+      {/* MODAL: CARGAR PLAZO SIN EL CAMPO ABOGADO RESPONSABLE */}
       <Dialog open={openPlazoModal} onClose={() => setOpenPlazoModal(false)} fullWidth maxWidth="xs" slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
         <DialogTitle fontWeight="bold">Cargar Término Procesal</DialogTitle>
         <Box component="form" onSubmit={handleAgregarPlazo}>
           <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <TextField label="Descripción del Término (Ej: Recurso de Apelación)" fullWidth required value={descripcionPlazo} onChange={e => setDescripcionPlazo(e.target.value)} />
             <TextField label="Fecha Límite Judicial (Fecha Fatal)" type="date" fullWidth required slotProps={{ inputLabel: { shrink: true } }} value={fechaFatalInput} onChange={e => setFechaFatalInput(e.target.value)} />
-            <TextField label="Abogado Litigante Responsable" fullWidth required value={responsablePlazo} onChange={e => setResponsiblePlazo(e.target.value)} />
           </DialogContent>
           <DialogActions sx={{ p: 2.5 }}>
             <Button onClick={() => setOpenPlazoModal(false)} color="inherit" sx={{ textTransform: 'none' }}>Cancelar</Button>
