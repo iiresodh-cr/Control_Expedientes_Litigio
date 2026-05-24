@@ -1,60 +1,56 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../config/firebase';
 import { 
-  collection, addDoc, getDocs, query, orderBy, 
-  serverTimestamp, getCountFromServer, doc, updateDoc, deleteDoc 
+  collection, 
+  getDocs, 
+  query, 
+  orderBy, 
+  addDoc, 
+  serverTimestamp 
 } from 'firebase/firestore';
 import { 
-  Box, Typography, Button, Card, CardContent, CardActions, 
-  Dialog, DialogTitle, DialogContent, DialogActions, TextField, 
-  CircularProgress, Alert, Divider, IconButton, Chip, FormControl, 
-  InputLabel, Select, MenuItem
+  Box, 
+  Typography, 
+  Button, 
+  Paper, 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableContainer, 
+  TableHead, 
+  TableRow, 
+  IconButton, 
+  Chip, 
+  CircularProgress, 
+  Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  MenuItem
 } from '@mui/material';
-import { Plus, Gavel, Calendar, Users, Edit, Trash2 } from 'lucide-react';
-import { registrarLogAuditoria } from '../utils/auditLogger';
-
-const ESTADOS_CASO = ['Activo', 'Suspendido', 'Cerrado', 'Archivado'];
+import { FolderPlus, Eye, AlertTriangle } from 'lucide-react';
 
 export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
   const [casos, setCasos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
+  
+  // Estados para Modal de Nuevo Caso
   const [openModal, setOpenModal] = useState(false);
-  const [nombre, setNombre] = useState('');
-  const [descripcion, setDescripcion] = useState('');
-
-  const [openEditModal, setOpenEditModal] = useState(false);
-  const [casoAEditarId, setCasoAEditarId] = useState(null);
-  const [editNombre, setEditNombre] = useState('');
-  const [editDescripcion, setEditDescripcion] = useState('');
-  const [editEstado, setEditEstado] = useState('Activo');
+  const [nuevoNombre, setNuevoNombre] = useState('');
+  const [nuevoNumero, setNuevoNumero] = useState('');
+  const [nuevoMateria, setNuevoMateria] = useState('');
 
   const fetchCasos = async () => {
     setLoading(true);
     try {
-      const q = query(collection(db, 'casos'), orderBy('fecha_creacion', 'desc'));
-      const querySnapshot = await getDocs(q);
-      
-      const listaCasos = await Promise.all(
-        querySnapshot.docs.map(async (docSnapshot) => {
-          const id = docSnapshot.id;
-          const data = docSnapshot.data();
-          const clientesRef = collection(db, 'casos', id, 'clientes');
-          const countSnapshot = await getCountFromServer(clientesRef);
-          
-          return {
-            id,
-            ...data,
-            estado: data.estado || 'Activo',
-            totalClientes: countSnapshot.data().count
-          };
-        })
-      );
-      setCasos(listaCasos);
+      const q = query(collection(db, 'casos'), orderBy('numeroExpediente', 'asc'));
+      const snapshot = await getDocs(q);
+      setCasos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     } catch (err) {
-      console.error(err);
-      setError('Error al cargar los casos de la base de datos.');
+      setError('Error de comunicación: No se pudo conectar con el servidor de expedientes.');
     } finally {
       setLoading(false);
     }
@@ -64,195 +60,197 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
     fetchCasos();
   }, []);
 
-  const handleCreateCaso = async (e) => {
+  const handleCrearCaso = async (e) => {
     e.preventDefault();
-    if (!nombre.trim()) return;
+    if (!nuevoNombre || !nuevoNumero || !nuevoMateria) return;
 
     try {
-      const docRef = await addDoc(collection(db, 'casos'), {
-        nombre: nombre.trim(),
-        descripcion: descripcion.trim(),
-        fecha_creacion: serverTimestamp(),
-        estado: 'Activo'
+      await addDoc(collection(db, 'casos'), {
+        nombreCaso: nuevoNombre,
+        numeroExpediente: nuevoNumero,
+        materia: nuevoMateria,
+        creadoPor: currentUserEmail,
+        fechaCreacion: serverTimestamp(),
+        plazos: [] // Inicializador inmutable para el control de términos fatales
       });
-      
-      // REGISTRO AUDITORÍA ENTERPRISE
-      await registrarLogAuditoria(currentUserEmail, 'Creación de Caso', `Se creó el litigio: "${nombre.trim()}" con ID asignado: ${docRef.id}`);
 
-      setNombre('');
-      setDescripcion('');
+      // Registro transaccional en la auditoría interna
+      await addDoc(collection(db, 'logs_auditoria'), {
+        usuario: currentUserEmail,
+        accion: 'CREAR_CASO',
+        detalles: `Creación del expediente de litigio número: ${nuevoNumero}`,
+        fecha: serverTimestamp()
+      });
+
+      setNuevoNombre('');
+      setNuevoNumero('');
+      setNuevoMateria('');
       setOpenModal(false);
       fetchCasos();
     } catch (err) {
-      setError('No se pudo crear el caso. Revisa las reglas de Firestore.');
+      setError('Acceso denegado: No posee autorizaciones de escritura en el servidor legal.');
     }
   };
 
-  const handleOpenEdit = (caso) => {
-    setCasoAEditarId(caso.id);
-    setEditNombre(caso.nombre);
-    setEditDescripcion(caso.descripcion || '');
-    setEditEstado(caso.estado);
-    setOpenEditModal(true);
-  };
+  // =====================================================================================
+  // MOTOR DEL SEMÁFORO AUTOMATIZADO: Evalúa los términos abiertos más críticos
+  // =====================================================================================
+  const calcularSemaforoDePlazos = (plazos = []) => {
+    const plazosActivos = plazos.filter(p => !p.completado);
+    if (plazosActivos.length === 0) {
+      return { label: 'Sin plazos activos', color: 'default', bcolor: '#e2e8f0', textColor: '#64748b', anim: false };
+    }
 
-  const handleUpdateCaso = async (e) => {
-    e.preventDefault();
-    if (!editNombre.trim() || !casoAEditarId) return;
+    const fechasEnMilisegundos = plazosActivos.map(p => new Date(p.fechaFatal + 'T00:00:00').getTime());
+    const fechaMasProximaMs = Math.min(...fechasEnMilisegundos);
+    
+    const hoy = new Date();
+    hoy.setHours(0,0,0,0);
+    
+    const fechaFatal = new Date(fechaMasProximaMs);
+    fechaFatal.setHours(0,0,0,0);
 
-    try {
-      const casoDocRef = doc(db, 'casos', casoAEditarId);
-      await updateDoc(casoDocRef, {
-        nombre: editNombre.trim(),
-        descripcion: editDescripcion.trim(),
-        estado: editEstado
-      });
+    const diferenciaTiempo = fechaFatal.getTime() - hoy.getTime();
+    const diasRestantes = Math.ceil(diferenciaTiempo / (1000 * 60 * 60 * 24));
 
-      // REGISTRO AUDITORÍA ENTERPRISE
-      await registrarLogAuditoria(currentUserEmail, 'Modificación de Caso', `Se configuró el litigio ID: ${casoAEditarId}. Nombre: "${editNombre.trim()}", Estado: [${editEstado}]`);
-
-      setOpenEditModal(false);
-      setCasoAEditarId(null);
-      fetchCasos();
-    } catch (err) {
-      setError('No se pudieron actualizar los datos del litigio.');
+    if (diasRestantes < 0) {
+      return { label: `Vencido (${Math.abs(diasRestantes)} d)`, color: 'error', bcolor: '#fef2f2', textColor: '#b91c1c', anim: true };
+    } else if (diasRestantes <= 2) {
+      return { label: `CRÍTICO (${diasRestantes} d)`, color: 'error', bcolor: '#fef2f2', textColor: '#b91c1c', anim: true };
+    } else if (diasRestantes <= 5) {
+      return { label: `Advertencia (${diasRestantes} d)`, color: 'warning', bcolor: '#fffbeb', textColor: '#b45309', anim: false };
+    } else {
+      return { label: `${diasRestantes} días libres`, color: 'success', bcolor: '#f0fdf4', textColor: '#15803d', anim: false };
     }
   };
-
-  const handleDeleteCaso = async (id, nombreCaso) => {
-    if (userRole !== 'Superadmin' && userRole !== 'Admin') {
-      alert('Operación restringida. No posee los privilegios requeridos.');
-      return;
-    }
-    if (!window.confirm(`¿CRÍTICO? ¿Está completamente seguro de eliminar el caso "${nombreCaso}"? Esta acción borrará de manera irreversible el litigio y todas las configuraciones asociadas.`)) return;
-
-    try {
-      await deleteDoc(doc(db, 'casos', id));
-      
-      // REGISTRO AUDITORÍA ENTERPRISE
-      await registrarLogAuditoria(currentUserEmail, 'Eliminación de Caso', `CRÍTICO: Se eliminó irreversiblemente el caso completo: "${nombreCaso}" (ID: ${id})`);
-
-      fetchCasos();
-    } catch (err) {
-      setError('Error de permisos en Firestore al intentar eliminar el litigio.');
-    }
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Activo': return 'success';
-      case 'Suspendido': return 'warning';
-      case 'Cerrado': return 'error';
-      case 'Archivado': return 'default';
-      default: return 'primary';
-    }
-  };
-
-  if (loading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress /></Box>
-    );
-  }
 
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
-          <Typography variant="h4" fontWeight="bold" color="text.primary">Casos y Litigios</Typography>
-          <Typography variant="body2" color="text.secondary">Selecciona un caso para gestionar sus clientes, documentos y pagos.</Typography>
+          <Typography variant="h4" fontWeight="bold" color="text.primary">
+            Control de Expedientes Activos
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Módulo general de litigios jurídicos de la firma institucional.
+          </Typography>
         </Box>
-        <Button 
-          variant="contained" 
-          startIcon={<Plus size={18} />} 
-          onClick={() => setOpenModal(true)}
-          sx={{ textTransform: 'none', fontWeight: 'bold', borderRadius: 2 }}
-        >
-          Nuevo Caso
-        </Button>
+        {(userRole === 'Superadmin' || userRole === 'Admin') && (
+          <Button
+            variant="contained"
+            startIcon={<FolderPlus size={18} />}
+            onClick={() => setOpenModal(true)}
+            sx={{ bgcolor: '#1a365d', textTransform: 'none', fontWeight: 'bold', borderRadius: 2 }}
+          >
+            Nuevo Expediente
+          </Button>
+        )}
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
-      {casos.length === 0 ? (
-        <Alert severity="info" sx={{ borderRadius: 2 }}>No hay casos registrados aún. Crea el primero para comenzar.</Alert>
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
+      ) : casos.length === 0 ? (
+        <Alert severity="info" sx={{ borderRadius: 2 }}>No existen expedientes de litigio registrados en el servidor.</Alert>
       ) : (
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' }, gap: 3 }}>
-          {casos.map((caso) => (
-            <Card key={caso.id} sx={{ height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 3, boxShadow: '0px 4px 12px rgba(0,0,0,0.03)', border: '1px solid #e2e8f0' }}>
-              <CardContent sx={{ flexGrow: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2, color: 'primary.main' }}>
-                  <Gavel size={24} />
-                  <Typography variant="h6" fontWeight="bold" component="div" noWrap>{caso.nombre}</Typography>
-                </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ minHeight: 40, mb: 2 }}>{caso.descripcion || 'Sin descripción disponible.'}</Typography>
-                <Divider sx={{ my: 1.5 }} />
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary', fontSize: '0.85rem', mb: 1.5 }}>
-                  <Users size={14} />
-                  <Typography variant="caption" sx={{ fontSize: '0.85rem' }}>Representados: <strong>{caso.totalClientes}</strong></Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: '0.85rem' }}>
-                  <Calendar size={14} color="#94a3b8" />
-                  <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>Estado del proceso:</Typography>
-                  <Chip label={caso.estado} size="small" color={getStatusColor(caso.estado)} sx={{ fontWeight: 'bold', height: 20, fontSize: '0.75rem' }} />
-                </Box>
-              </CardContent>
-              <CardActions sx={{ p: 2, pt: 0, gap: 1 }}>
-                <Button 
-                  variant="outlined" 
-                  size="small" 
-                  onClick={() => onSelectCaso(caso)}
-                  sx={{ flexGrow: 1, textTransform: 'none', fontWeight: 'bold', borderRadius: 1.5 }}
-                >
-                  Expediente del Caso
-                </Button>
-                <IconButton size="small" color="primary" onClick={() => handleOpenEdit(caso)} title="Configurar Litigio" sx={{ border: '1px solid #e2e8f0', borderRadius: 1.5, p: 0.75 }}>
-                  <Edit size={16} />
-                </IconButton>
-                {(userRole === 'Superadmin' || userRole === 'Admin') && (
-                  <IconButton size="small" color="error" onClick={() => handleDeleteCaso(caso.id, caso.nombre)} title="Eliminar Caso Completo" sx={{ border: '1px solid #fee2e2', bgcolor: '#fef2f2', borderRadius: 1.5, p: 0.75 }}>
-                    <Trash2 size={16} />
-                  </IconButton>
-                )}
-              </CardActions>
-            </Card>
-          ))}
-        </Box>
+        <TableContainer component={Paper} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+          <Table>
+            <TableHead sx={{ bgcolor: '#1a365d' }}>
+              <TableRow>
+                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>No. Expediente</TableCell>
+                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Nombre del Litigio</TableCell>
+                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Materia Jurídica</TableCell>
+                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Estatus de Plazos (Fechas Fatales)</TableCell>
+                <TableCell sx={{ color: 'white', fontWeight: 'bold', textAlign: 'center' }}>Acciones</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {casos.map((caso) => {
+                const semaforo = calcularSemaforoDePlazos(caso.plazos);
+                return (
+                  <TableRow key={caso.id} hover>
+                    <TableCell sx={{ fontWeight: 'bold', color: '#1a365d' }}>{caso.numeroExpediente}</TableCell>
+                    <TableCell sx={{ fontWeight: 'medium' }}>{caso.nombreCaso}</TableCell>
+                    <TableCell>
+                      <Chip label={caso.materia} size="small" sx={{ fontWeight: 'medium', bgcolor: '#f1f5f9' }} />
+                    </TableCell>
+                    <TableCell>
+                      <Box 
+                        sx={{ 
+                          display: 'inline-flex', 
+                          alignItems: 'center', 
+                          gap: 1,
+                          px: 1.5,
+                          py: 0.5,
+                          borderRadius: 2,
+                          bgcolor: semaforo.bcolor,
+                          border: `1px solid ${semaforo.color === 'default' ? '#e2e8f0' : 'transparent'}`,
+                          animation: semaforo.anim ? 'pulse 1.5s infinite alternate' : 'none',
+                          '@keyframes pulse': { '0%': { opacity: 0.6 }, '100%': { opacity: 1 } }
+                        }}
+                      >
+                        {semaforo.color === 'error' && <AlertTriangle size={14} color="#b91c1c" />}
+                        <Typography variant="caption" fontWeight="bold" color={semaforo.textColor}>
+                          {semaforo.label}
+                        </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ textAlign: 'center' }}>
+                      <IconButton size="small" color="primary" title="Abrir Expediente" onClick={() => onSelectCaso(caso)}>
+                        <Eye size={18} />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
 
-      {/* MODAL CREAR */}
-      <Dialog open={openModal} onClose={() => setOpenModal(false)} fullWidth maxWidth="xs" slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
-        <DialogTitle fontWeight="bold">Crear Nuevo Litigio</DialogTitle>
-        <Box component="form" onSubmit={handleCreateCaso}>
-          <DialogContent dividers>
-            <TextField autoFocus margin="dense" label="Nombre del Caso / Litigio" type="text" fullWidth variant="outlined" required value={nombre} onChange={(e) => setNombre(e.target.value)} sx={{ mb: 2 }} />
-            <TextField margin="dense" label="Descripción o Notas Iniciales" type="text" fullWidth multiline rows={3} variant="outlined" value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
+      {/* MODAL INSTITUCIONAL PARA NUEVO EXPEDIENTE */}
+      <Dialog open={openModal} onClose={() => setOpenModal(false)} fullWidth maxWidth="xs">
+        <form onSubmit={handleCrearCaso}>
+          <DialogTitle sx={{ fontWeight: 'bold', color: '#1a365d' }}>Registrar Litigio</DialogTitle>
+          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
+            <TextField
+              label="Número de Expediente / Carátula"
+              variant="outlined"
+              fullWidth
+              required
+              value={nuevoNumero}
+              onChange={(e) => setNuevoNumero(e.target.value)}
+            />
+            <TextField
+              label="Nombre de las Partes (Actor vs Demandado)"
+              variant="outlined"
+              fullWidth
+              required
+              value={nuevoNombre}
+              onChange={(e) => setNuevoNombre(e.target.value)}
+            />
+            <TextField
+              select
+              label="Materia Jurídica"
+              variant="outlined"
+              fullWidth
+              required
+              value={nuevoMateria}
+              onChange={(e) => setNuevoMateria(e.target.value)}
+            >
+              <MenuItem value="Constitucional / Amparo">Constitucional / Amparo</MenuItem>
+              <MenuItem value="Derechos Humanos Int.">Derechos Humanos Int.</MenuItem>
+              <MenuItem value="Contencioso Administrativo">Contencioso Administrativo</MenuItem>
+              <MenuItem value="Civil / Mercantil">Civil / Mercantil</MenuItem>
+              <MenuItem value="Laboral / Sindical">Laboral / Sindical</MenuItem>
+            </TextField>
           </DialogContent>
-          <DialogActions sx={{ p: 2.5 }}>
+          <DialogActions sx={{ p: 2, bgcolor: '#f8fafc' }}>
             <Button onClick={() => setOpenModal(false)} color="inherit" sx={{ textTransform: 'none' }}>Cancelar</Button>
-            <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }}>Crear Caso</Button>
+            <Button type="submit" variant="contained" sx={{ bgcolor: '#1a365d', textTransform: 'none', fontWeight: 'bold' }}>Guardar Caso</Button>
           </DialogActions>
-        </Box>
-      </Dialog>
-
-      {/* MODAL EDICIÓN */}
-      <Dialog open={openEditModal} onClose={() => setOpenEditModal(false)} fullWidth maxWidth="xs" slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
-        <DialogTitle fontWeight="bold">Configuración del Litigio</DialogTitle>
-        <Box component="form" onSubmit={handleUpdateCaso}>
-          <DialogContent dividers>
-            <TextField margin="dense" label="Nombre del Caso" type="text" fullWidth variant="outlined" required value={editNombre} onChange={(e) => setEditNombre(e.target.value)} sx={{ mb: 2.5 }} />
-            <TextField margin="dense" label="Descripción" type="text" fullWidth multiline rows={3} variant="outlined" value={editDescripcion} onChange={(e) => setEditDescripcion(e.target.value)} sx={{ mb: 2.5 }} />
-            <FormControl fullWidth>
-              <InputLabel id="select-estado-caso-label">Estado Actual del Caso</InputLabel>
-              <Select labelId="select-estado-caso-label" value={editEstado} label="Estado Actual del Caso" onChange={(e) => setEditEstado(e.target.value)}>
-                {ESTADOS_CASO.map((status) => <MenuItem key={status} value={status}>{status}</MenuItem>)}
-              </Select>
-            </FormControl>
-          </DialogContent>
-          <DialogActions sx={{ p: 2.5 }}>
-            <Button onClick={() => setOpenEditModal(false)} color="inherit" sx={{ textTransform: 'none' }}>Cancelar</Button>
-            <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }}>Guardar Cambios</Button>
-          </DialogActions>
-        </Box>
+        </form>
       </Dialog>
     </Box>
   );
