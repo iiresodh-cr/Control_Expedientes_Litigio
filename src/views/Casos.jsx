@@ -3,8 +3,6 @@ import { db } from '../config/firebase';
 import { 
   collection, 
   getDocs, 
-  query, 
-  orderBy, 
   addDoc, 
   serverTimestamp 
 } from 'firebase/firestore';
@@ -46,9 +44,18 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
   const fetchCasos = async () => {
     setLoading(true);
     try {
-      const q = query(collection(db, 'casos'), orderBy('numeroExpediente', 'asc'));
-      const snapshot = await getDocs(q);
-      setCasos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // CORRECCIÓN DE BÚSQUEDA: Trae todos los documentos sin importar si carecen de campos nuevos
+      const snapshot = await getDocs(collection(db, 'casos'));
+      const listaCasos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // ORDENACIÓN TOLERANTE: Ordena en memoria sin descartar registros incompletos
+      listaCasos.sort((a, b) => {
+        const valA = a.numeroExpediente || a.id || '';
+        const valB = b.numeroExpediente || b.id || '';
+        return valA.localeCompare(valB);
+      });
+
+      setCasos(listaCasos);
     } catch (err) {
       setError('Error de comunicación: No se pudo conectar con el servidor de expedientes.');
     } finally {
@@ -71,10 +78,9 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
         materia: nuevoMateria,
         creadoPor: currentUserEmail,
         fechaCreacion: serverTimestamp(),
-        plazos: [] // Inicializador inmutable para el control de términos fatales
+        plazos: [] 
       });
 
-      // Registro transaccional en la auditoría interna
       await addDoc(collection(db, 'logs_auditoria'), {
         usuario: currentUserEmail,
         accion: 'CREAR_CASO',
@@ -92,9 +98,6 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
     }
   };
 
-  // =====================================================================================
-  // MOTOR DEL SEMÁFORO AUTOMATIZADO: Evalúa los términos abiertos más críticos
-  // =====================================================================================
   const calcularSemaforoDePlazos = (plazos = []) => {
     const plazosActivos = plazos.filter(p => !p.completado);
     if (plazosActivos.length === 0) {
@@ -116,7 +119,7 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
     if (diasRestantes < 0) {
       return { label: `Vencido (${Math.abs(diasRestantes)} d)`, color: 'error', bcolor: '#fef2f2', textColor: '#b91c1c', anim: true };
     } else if (diasRestantes <= 2) {
-      return { label: `CRÍTICO (${diasRestantes} d)`, color: 'error', bcolor: '#fef2f2', textColor: '#b91c1c', anim: true };
+      return { label: `URGENTE (${diasRestantes} d)`, color: 'error', bcolor: '#fef2f2', textColor: '#b91c1c', anim: true };
     } else if (diasRestantes <= 5) {
       return { label: `Advertencia (${diasRestantes} d)`, color: 'warning', bcolor: '#fffbeb', textColor: '#b45309', anim: false };
     } else {
@@ -170,10 +173,15 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
                 const semaforo = calcularSemaforoDePlazos(caso.plazos);
                 return (
                   <TableRow key={caso.id} hover>
-                    <TableCell sx={{ fontWeight: 'bold', color: '#1a365d' }}>{caso.numeroExpediente}</TableCell>
-                    <TableCell sx={{ fontWeight: 'medium' }}>{caso.nombreCaso}</TableCell>
+                    {/* CONVERGENCIA JURÍDICA: Muestra datos o se adapta a estructuras de prueba previas */}
+                    <TableCell sx={{ fontWeight: 'bold', color: '#1a365d' }}>
+                      {caso.numeroExpediente || `S/N (${caso.id.substring(0,5)})`}
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 'medium' }}>
+                      {caso.nombreCaso || caso.descripcion || 'Expediente Sin Título'}
+                    </TableCell>
                     <TableCell>
-                      <Chip label={caso.materia} size="small" sx={{ fontWeight: 'medium', bgcolor: '#f1f5f9' }} />
+                      <Chip label={caso.materia || 'General'} size="small" sx={{ fontWeight: 'medium', bgcolor: '#f1f5f9' }} />
                     </TableCell>
                     <TableCell>
                       <Box 

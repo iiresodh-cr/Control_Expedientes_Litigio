@@ -34,8 +34,7 @@ import {
   Tabs,
   Tab,
   Card,
-  CardContent,
-  IconButton
+  CardContent
 } from '@mui/material';
 import { 
   ArrowLeft, 
@@ -44,8 +43,7 @@ import {
   Clock, 
   Users, 
   FileText, 
-  Plus, 
-  NotebookTabs 
+  Plus 
 } from 'lucide-react';
 
 export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole }) {
@@ -85,21 +83,18 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [nombreDocComun, setNombreDocComun] = useState('');
   const [urlDocComun, setUrlDocComun] = useState('');
 
-  // Carga paralela de subcolecciones estructuradas bajo las reglas del servidor
   const cargarSubcoleccionesCaso = async () => {
     setLoadingSubs(true);
     setError('');
     try {
       // 1. Cargar Clientes vinculados al Litigio
       const clientesRef = collection(db, 'casos', instanciaCaso.id, 'clientes');
-      const qClientes = query(clientesRef, orderBy('nombre', 'asc'));
-      const snapClientes = await getDocs(qClientes);
+      const snapClientes = await getDocs(clientesRef);
       setClientes(snapClientes.docs.map(d => ({ id: d.id, ...d.data() })));
 
       // 2. Cargar Documentos Comunes del Litigio
       const docsComunesRef = collection(db, 'casos', instanciaCaso.id, 'documentos_comunes');
-      const qDocs = query(docsComunesRef, orderBy('fechaCarga', 'desc'));
-      const snapDocs = await getDocs(qDocs);
+      const snapDocs = await getDocs(docsComunesRef);
       setDocumentosComunes(snapDocs.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (err) {
       setError('Acceso denegado: Restricción perimetral al consultar subcolecciones del caso.');
@@ -116,13 +111,11 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     setClienteSeleccionado(cliente);
     try {
       const notasRef = collection(db, 'casos', instanciaCaso.id, 'clientes', cliente.id, 'notas');
-      const qNotas = query(notasRef, orderBy('fecha', 'desc'));
-      const snapNotas = await getDocs(qNotas);
+      const snapNotas = await getDocs(notasRef);
       setNotasCliente(snapNotas.docs.map(d => ({ id: d.id, ...d.data() })));
 
       const docsRef = collection(db, 'casos', instanciaCaso.id, 'clientes', cliente.id, 'documentos');
-      const qDocs = query(docsRef, orderBy('fechaCarga', 'desc'));
-      const snapDocs = await getDocs(qDocs);
+      const snapDocs = await getDocs(docsRef);
       setDocsCliente(snapDocs.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (err) {
       setError('Error al consultar el expediente privado del cliente.');
@@ -154,7 +147,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       await addDoc(collection(db, 'logs_auditoria'), {
         usuario: currentUserEmail,
         accion: 'AGREGAR_PLAZO_PROCESAL',
-        detalles: `Se fijó término fatal para ${fechaFatalInput} en Exp. ${instanciaCaso.numeroExpediente}`,
+        detalles: `Se fijó término fatal para ${fechaFatalInput} en Exp. ${instanciaCaso.numeroExpediente || instanciaCaso.id}`,
         fecha: serverTimestamp()
       });
 
@@ -176,7 +169,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     setError('');
     try {
       const casoRef = doc(db, 'casos', instanciaCaso.id);
-      const plazosModificados = instanciaCaso.plazos.map(p => {
+      const plazosModificados = (instanciaCaso.plazos || []).map(p => {
         if (p.id === plazoAActivar.id) {
           return {
             ...p,
@@ -193,7 +186,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       await addDoc(collection(db, 'logs_auditoria'), {
         usuario: currentUserEmail,
         accion: 'DESACTIVAR_PLAZO_PROCESAL',
-        detalles: `Plazo cerrado en Exp. ${instanciaCaso.numeroExpediente}. Sello judicial Folio: ${folioAcuse}`,
+        detalles: `Plazo cerrado en Exp. ${instanciaCaso.numeroExpediente || instanciaCaso.id}. Sello judicial Folio: ${folioAcuse}`,
         fecha: serverTimestamp()
       });
 
@@ -242,7 +235,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
 
       setContenidoNota('');
       setOpenNotaModal(false);
-      cargarDatosEspecificosCliente(clienteSeleccionado);
+      cargarDatosSpecificosCliente(clienteSeleccionado);
     } catch (err) {
       setError('Error al resguardar nota jurídica.');
     }
@@ -262,7 +255,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       setNombreDocCliente('');
       setUrlDocCliente('');
       setOpenDocClienteModal(false);
-      cargarDatosEspecificosCliente(clienteSeleccionado);
+      cargarDatosSpecificosCliente(clienteSeleccionado);
     } catch (err) {
       setError('Error al registrar documento del cliente.');
     }
@@ -281,7 +274,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         url: urlDocComun,
         cargadoPor: currentUserEmail,
         fechaCarga: new Date().toLocaleString()
-          });
+      });
 
       setNombreDocComun('');
       setUrlDocComun('');
@@ -324,21 +317,21 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           EXPEDIENTE JUDICIAL ENTERPRISE
         </Typography>
         <Typography variant="h5" fontWeight="bold" color="#1a365d" gutterBottom>
-          {instanciaCaso.nombreCaso}
+          {instanciaCaso.nombreCaso || instanciaCaso.descripcion || 'Expediente Sin Título'}
         </Typography>
         <Divider sx={{ my: 2 }} />
         <Grid container spacing={2}>
           <Grid item xs={6} sm={3}>
             <Typography variant="caption" color="text.secondary" display="block">No. Expediente</Typography>
-            <Typography variant="body2" fontWeight="bold" color="#1a365d">{instanciaCaso.numeroExpediente}</Typography>
+            <Typography variant="body2" fontWeight="bold" color="#1a365d">{instanciaCaso.numeroExpediente || 'S/N'}</Typography>
           </Grid>
           <Grid item xs={6} sm={3}>
             <Typography variant="caption" color="text.secondary" display="block">Materia Litigiosa</Typography>
-            <Typography variant="body2" fontWeight="bold">{instanciaCaso.materia}</Typography>
+            <Typography variant="body2" fontWeight="bold">{instanciaCaso.materia || 'General'}</Typography>
           </Grid>
           <Grid item xs={6} sm={3}>
             <Typography variant="caption" color="text.secondary" display="block">Abogado Asignador</Typography>
-            <Typography variant="body2" fontSize="0.85rem">{instanciaCaso.creadoPor}</Typography>
+            <Typography variant="body2" fontSize="0.85rem">{instanciaCaso.creadoPor || 'Carga Histórica'}</Typography>
           </Grid>
           <Grid item xs={6} sm={3}>
             <Typography variant="caption" color="text.secondary" display="block">Clientes Vinculados</Typography>
@@ -358,9 +351,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         <Tab icon={<FileText size={16} />} iconPosition="start" label="Expediente Digital Común" />
       </Tabs>
 
-      {/* =====================================================================================
-          CONTENIDO: TAB 0 - CONTROL DE VENCIMIENTOS JUDICIALES
-          ===================================================================================== */}
+      {/* CONTENIDO: TAB 0 - CONTROL DE VENCIMIENTOS JUDICIALES */}
       {activeTab === 0 && (
         <Box>
           <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -429,9 +420,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Box>
       )}
 
-      {/* =====================================================================================
-          CONTENIDO: TAB 1 - GESTIÓN DE CLIENTES, NOTAS INTERNAS Y DOCUMENTOS ASOCIADOS
-          ===================================================================================== */}
+      {/* CONTENIDO: TAB 1 - GESTIÓN DE CLIENTES, NOTAS INTERNAS Y DOCUMENTOS */}
       {activeTab === 1 && (
         <Box>
           <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -474,7 +463,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
               )}
             </Grid>
 
-            {/* EXPEDIENTE PRIVADO DEL CLIENTE SELECCIONADO */}
             <Grid item xs={12} md={8}>
               {clienteSeleccionado ? (
                 <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
@@ -533,9 +521,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Box>
       )}
 
-      {/* =====================================================================================
-          CONTENIDO: TAB 2 - EXPEDIENTE DIGITAL COMÚN DEL JUICIO
-          ===================================================================================== */}
+      {/* CONTENIDO: TAB 2 - EXPEDIENTE DIGITAL COMÚN */}
       {activeTab === 2 && (
         <Box>
           <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -567,7 +553,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                   {documentosComunes.map(doc => (
                     <TableRow key={doc.id} hover>
                       <TableCell sx={{ fontWeight: 'medium', py: 1.5 }}>{doc.name || doc.nombre}</TableCell>
-                      <TableCell sx={{ fontSize: '0.85rem' }}>{doc.cargadoPor}</TableCell>
+                      <TableCell sx={{ fontSize: '0.85rem' }}>{doc.cargadoPor || 'Personal de Staff'}</TableCell>
                       <TableCell sx={{ fontSize: '0.85rem', color: 'text.secondary' }}>{doc.fechaCarga}</TableCell>
                       <TableCell sx={{ textAlign: 'center' }}>
                         <Button variant="text" size="small" href={doc.url} target="_blank" rel="noopener" sx={{ textTransform: 'none', fontWeight: 'bold' }}>
@@ -583,9 +569,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Box>
       )}
 
-      {/* =====================================================================================
-          SECCIÓN DE MODALES REVISADOS Y COMPLETOS
-          ===================================================================================== */}
+      {/* SECCIÓN DE MODALES */}
       
       {/* MODAL: CARGAR PLAZO */}
       <Dialog open={openPlazoModal} onClose={() => setOpenPlazoModal(false)} fullWidth maxWidth="xs">
