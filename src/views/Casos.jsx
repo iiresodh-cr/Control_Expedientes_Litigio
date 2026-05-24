@@ -10,7 +10,7 @@ import {
   CircularProgress, Alert, Divider, IconButton, Chip, FormControl, 
   InputLabel, Select, MenuItem
 } from '@mui/material';
-import { Plus, Gavel, Calendar, Users, Edit, Trash2 } from 'lucide-react';
+import { Plus, Gavel, Calendar, Users, Edit, Trash2, AlertTriangle } from 'lucide-react';
 import { registrarLogAuditoria } from '../utils/auditLogger';
 
 const ESTADOS_CASO = ['Activo', 'Suspendido', 'Cerrado', 'Archivado'];
@@ -47,6 +47,7 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
             id,
             ...data,
             estado: data.estado || 'Activo',
+            plazos: data.plazos || [],
             totalClientes: countSnapshot.data().count
           };
         })
@@ -73,7 +74,8 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
         nombre: nombre.trim(),
         descripcion: descripcion.trim(),
         fecha_creacion: serverTimestamp(),
-        estado: 'Activo'
+        estado: 'Activo',
+        plazos: []
       });
       
       // REGISTRO AUDITORÍA ENTERPRISE
@@ -148,6 +150,33 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
     }
   };
 
+  const calcularSemaforoDePlazos = (plazos = []) => {
+    const plazosActivos = plazos.filter(p => !p.completado);
+    if (plazosActivos.length === 0) return null;
+
+    const fechasEnMilisegundos = plazosActivos.map(p => new Date(p.fechaFatal + 'T00:00:00').getTime());
+    const fechaMasProximaMs = Math.min(...fechasEnMilisegundos);
+    
+    const hoy = new Date();
+    hoy.setHours(0,0,0,0);
+    
+    const fechaFatal = new Date(fechaMasProximaMs);
+    fechaFatal.setHours(0,0,0,0);
+
+    const diferenciaTiempo = fechaFatal.getTime() - hoy.getTime();
+    const diasRestantes = Math.ceil(diferenciaTiempo / (1000 * 60 * 60 * 24));
+
+    if (diasRestantes < 0) {
+      return { label: `Vencido (${Math.abs(diasRestantes)} d)`, color: 'error', bcolor: '#fef2f2', textColor: '#b91c1c' };
+    } else if (diasRestantes <= 2) {
+      return { label: `URGENTE (${diasRestantes} d)`, color: 'error', bcolor: '#fef2f2', textColor: '#b91c1c' };
+    } else if (diasRestantes <= 5) {
+      return { label: `Advertencia (${diasRestantes} d)`, color: 'warning', bcolor: '#fffbeb', textColor: '#b45309' };
+    } else {
+      return { label: `${diasRestantes} días libres`, color: 'success', bcolor: '#f0fdf4', textColor: '#15803d' };
+    }
+  };
+
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: 8 }}><CircularProgress /></Box>
@@ -177,45 +206,55 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
         <Alert severity="info" sx={{ borderRadius: 2 }}>No hay casos registrados aún. Crea el primero para comenzar.</Alert>
       ) : (
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' }, gap: 3 }}>
-          {casos.map((caso) => (
-            <Card key={caso.id} sx={{ height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 3, boxShadow: '0px 4px 12px rgba(0,0,0,0.03)', border: '1px solid #e2e8f0' }}>
-              <CardContent sx={{ flexGrow: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2, color: 'primary.main' }}>
-                  <Gavel size={24} />
-                  <Typography variant="h6" fontWeight="bold" component="div" noWrap>{caso.nombre}</Typography>
-                </Box>
-                <Typography variant="body2" color="text.secondary" sx={{ minHeight: 40, mb: 2 }}>{caso.descripcion || 'Sin descripción disponible.'}</Typography>
-                <Divider sx={{ my: 1.5 }} />
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary', fontSize: '0.85rem', mb: 1.5 }}>
-                  <Users size={14} />
-                  <Typography variant="caption" sx={{ fontSize: '0.85rem' }}>Representados: <strong>{caso.totalClientes}</strong></Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: '0.85rem' }}>
-                  <Calendar size={14} color="#94a3b8" />
-                  <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>Estado del proceso:</Typography>
-                  <Chip label={caso.estado} size="small" color={getStatusColor(caso.estado)} sx={{ fontWeight: 'bold', height: 20, fontSize: '0.75rem' }} />
-                </Box>
-              </CardContent>
-              <CardActions sx={{ p: 2, pt: 0, gap: 1 }}>
-                <Button 
-                  variant="outlined" 
-                  size="small" 
-                  onClick={() => onSelectCaso(caso)}
-                  sx={{ flexGrow: 1, textTransform: 'none', fontWeight: 'bold', borderRadius: 1.5 }}
-                >
-                  Expediente del Caso
-                </Button>
-                <IconButton size="small" color="primary" onClick={() => handleOpenEdit(caso)} title="Configurar Litigio" sx={{ border: '1px solid #e2e8f0', borderRadius: 1.5, p: 0.75 }}>
-                  <Edit size={16} />
-                </IconButton>
-                {(userRole === 'Superadmin' || userRole === 'Admin') && (
-                  <IconButton size="small" color="error" onClick={() => handleDeleteCaso(caso.id, caso.nombre)} title="Eliminar Caso Completo" sx={{ border: '1px solid #fee2e2', bgcolor: '#fef2f2', borderRadius: 1.5, p: 0.75 }}>
-                    <Trash2 size={16} />
+          {casos.map((caso) => {
+            const semaforo = calcularSemaforoDePlazos(caso.plazos);
+            return (
+              <Card key={caso.id} sx={{ height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 3, boxShadow: '0px 4px 12px rgba(0,0,0,0.03)', border: '1px solid #e2e8f0' }}>
+                <CardContent sx={{ flexGrow: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2, color: 'primary.main' }}>
+                    <Gavel size={24} />
+                    <Typography variant="h6" fontWeight="bold" component="div" noWrap>{caso.nombre}</Typography>
+                  </Box>
+                  <Typography variant="body2" color="text.secondary" sx={{ minHeight: 40, mb: 2 }}>{caso.descripcion || 'Sin descripción disponible.'}</Typography>
+                  <Divider sx={{ my: 1.5 }} />
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'text.secondary', fontSize: '0.85rem', mb: 1.5 }}>
+                    <Users size={14} />
+                    <Typography variant="caption" sx={{ fontSize: '0.85rem' }}>Representados: <strong>{caso.totalClientes}</strong></Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, fontSize: '0.85rem' }}>
+                    <Calendar size={14} color="#94a3b8" />
+                    <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>Estado del proceso:</Typography>
+                    <Chip label={caso.estado} size="small" color={getStatusColor(caso.estado)} sx={{ fontWeight: 'bold', height: 20, fontSize: '0.75rem' }} />
+                  </Box>
+                  {semaforo && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5, fontSize: '0.85rem' }}>
+                      <AlertTriangle size={14} color={semaforo.textColor} />
+                      <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>Vencimiento:</Typography>
+                      <Chip label={semaforo.label} size="small" sx={{ fontWeight: 'bold', height: 20, fontSize: '0.75rem', bgcolor: semaforo.bcolor, color: semaforo.textColor }} />
+                    </Box>
+                  )}
+                </CardContent>
+                <CardActions sx={{ p: 2, pt: 0, gap: 1 }}>
+                  <Button 
+                    variant="outlined" 
+                    size="small" 
+                    onClick={() => onSelectCaso(caso)}
+                    sx={{ flexGrow: 1, textTransform: 'none', fontWeight: 'bold', borderRadius: 1.5 }}
+                  >
+                    Expediente del Caso
+                  </Button>
+                  <IconButton size="small" color="primary" onClick={() => handleOpenEdit(caso)} title="Configurar Litigio" sx={{ border: '1px solid #e2e8f0', borderRadius: 1.5, p: 0.75 }}>
+                    <Edit size={16} />
                   </IconButton>
-                )}
-              </CardActions>
-            </Card>
-          ))}
+                  {(userRole === 'Superadmin' || userRole === 'Admin') && (
+                    <IconButton size="small" color="error" onClick={() => handleDeleteCaso(caso.id, caso.nombre)} title="Eliminar Caso Completo" sx={{ border: '1px solid #fee2e2', bgcolor: '#fef2f2', borderRadius: 1.5, p: 0.75 }}>
+                      <Trash2 size={16} />
+                    </IconButton>
+                  )}
+                </CardActions>
+              </Card>
+            );
+          })}
         </Box>
       )}
 
@@ -244,7 +283,7 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
             <FormControl fullWidth>
               <InputLabel id="select-estado-caso-label">Estado Actual del Caso</InputLabel>
               <Select labelId="select-estado-caso-label" value={editEstado} label="Estado Actual del Caso" onChange={(e) => setEditEstado(e.target.value)}>
-                {ESTADOS_CASO.map((status) => <MenuItem key={status} value={status}>{status}</MenuItem>)}
+                {ESTADOS_CASE = ESTADOS_CASO.map((status) => <MenuItem key={status} value={status}>{status}</MenuItem>)}
               </Select>
             </FormControl>
           </DialogContent>

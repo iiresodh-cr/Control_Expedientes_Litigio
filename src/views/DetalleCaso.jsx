@@ -8,7 +8,9 @@ import {
   doc, 
   deleteDoc, 
   query, 
-  orderBy 
+  orderBy,
+  updateDoc,
+  arrayUnion
 } from 'firebase/firestore';
 import { 
   ref, 
@@ -57,7 +59,9 @@ import {
   Eye, 
   Upload, 
   File, 
-  Trash2 
+  Trash2,
+  Clock,
+  Calendar
 } from 'lucide-react';
 import FichaCliente from './FichaCliente';
 import { registrarLogAuditoria } from '../utils/auditLogger';
@@ -136,6 +140,16 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [direccion, setDireccion] = useState('');
   const [notas, setNotas] = useState('');
 
+  // Estados para control de plazos procesales fatales
+  const [localPlazos, setLocalPlazos] = useState(caso.plazos || []);
+  const [openPlazoModal, setOpenPlazoModal] = useState(false);
+  const [descripcionPlazo, setDescripcionPlazo] = useState('');
+  const [fechaFatalInput, setFechaFatalInput] = useState('');
+  const [responsablePlazo, setResponsablePlazo] = useState('');
+  const [openCerrarModal, setOpenCerrarModal] = useState(false);
+  const [plazoAActivar, setPlazoAActivar] = useState(null);
+  const [folioAcuse, setFolioAcuse] = useState('');
+
   const fetchClientes = async () => {
     setLoading(true);
     setError('');
@@ -168,9 +182,10 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   };
 
   useEffect(() => {
+    setLocalPlazos(caso.plazos || []);
     fetchClientes();
     fetchDocsComunes();
-  }, [caso.id]);
+  }, [caso.id, caso.plazos]);
 
   const handleCreateCliente = async (e) => {
     e.preventDefault();
@@ -200,7 +215,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       await registrarLogAuditoria(
         currentUserEmail, 
         'Registro de Cliente', 
-        `Se inscribió al representado "${apellidos.trim(), nombres.trim()}" en el litigio [${caso.nombre}]`
+        `Se inscribió al representado "${apellidos.trim()}, nombres.trim()" en el litigio [${caso.nombre}]`
       );
 
       setNombres('');
@@ -282,6 +297,79 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     }
   };
 
+  const handleAgregarPlazo = async (e) => {
+    e.preventDefault();
+    if (!descripcionPlazo.trim() || !fechaFatalInput || !responsablePlazo.trim()) return;
+
+    setError('');
+    const nuevoPlazoObj = {
+      id: 'plazo_' + Date.now(),
+      descripcion: descripcionPlazo.trim(),
+      fechaFatal: fechaFatalInput,
+      responsable: responsablePlazo.trim(),
+      completado: false,
+      fechaPresentacion: '',
+      folioAcuse: ''
+    };
+
+    try {
+      const casoDocRef = doc(db, 'casos', caso.id);
+      await updateDoc(casoDocRef, {
+        plazos: arrayUnion(nuevoPlazoObj)
+      });
+
+      await registrarLogAuditoria(
+        currentUserEmail,
+        'Registro de Plazo',
+        `Se asignó fecha fatal ${fechaFatalInput} para "${descripcionPlazo.trim()}" en el caso "${caso.nombre}"`
+      );
+
+      setLocalPlazos(prev => [...prev, nuevoPlazoObj]);
+      setDescripcionPlazo('');
+      setFechaFatalInput('');
+      setResponsablePlazo('');
+      setOpenPlazoModal(false);
+    } catch (err) {
+      setError('No se pudo guardar el plazo procesal.');
+    }
+  };
+
+  const handleConfirmarCierrePlazo = async (e) => {
+    e.preventDefault();
+    if (!plazoAActivar || !folioAcuse.trim()) return;
+
+    setError('');
+    try {
+      const plazosModificados = localPlazos.map(p => {
+        if (p.id === plazoAActivar.id) {
+          return {
+            ...p,
+            completado: true,
+            fechaPresentacion: new Date().toLocaleString(),
+            folioAcuse: folioAcuse.trim()
+          };
+        }
+        return p;
+      });
+
+      const casoDocRef = doc(db, 'casos', caso.id);
+      await updateDoc(casoDocRef, { plazos: plazosModificados });
+
+      await registrarLogAuditoria(
+        currentUserEmail,
+        'Resolución de Plazo',
+        `Se completó el plazo ID: ${plazoAActivar.id} con folio judicial: ${folioAcuse.trim()}`
+      );
+
+      setLocalPlazos(plazosModificados);
+      setFolioAcuse('');
+      setPlazoAActivar(null);
+      setOpenCerrarModal(false);
+    } catch (err) {
+      setError('Error al cerrar el hito procesal.');
+    }
+  };
+
   if (clienteSeleccionadoId) {
     return (
       <FichaCliente 
@@ -317,6 +405,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           <Tab icon={<Users size={18} />} iconPosition="start" label="Fichas de Clientes" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
           <Tab icon={<FileText size={18} />} iconPosition="start" label="Documentos Comunes" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
           <Tab icon={<CreditCard size={18} />} iconPosition="start" label="Control de Pagos" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
+          <Tab icon={<Clock size={18} />} iconPosition="start" label="Control de Vencimientos" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
         </Tabs>
       </Box>
 
@@ -466,6 +555,89 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Paper>
       </TabPanel>
 
+      {/* PESTAÑA 4: CONTROL DE VENCIMIENTOS PROCESALES */}
+      <TabPanel value={activeTab} index={3}>
+        <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Box>
+              <Typography variant="h6" fontWeight="bold">Fechas Fatales y Plazos Judiciales</Typography>
+              <Typography variant="body2" color="text.secondary">Seguimiento de términos perentorios asociados a las notificaciones oficiales.</Typography>
+            </Box>
+            <Button 
+              variant="contained" 
+              startIcon={<Calendar size={18} />} 
+              onClick={() => setOpenPlazoModal(true)} 
+              sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold' }}
+            >
+              Cargar Fecha Fatal
+            </Button>
+          </Box>
+
+          {localPlazos.length === 0 ? (
+            <Alert severity="info" sx={{ borderRadius: 2 }}>No hay plazos procesales configurados para este litigio.</Alert>
+          ) : (
+            <TableContainer component={Paper} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+              <Table size="small">
+                <TableHead sx={{ bgcolor: '#f8fafc' }}>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Término Procesal / Descripción</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Fecha Límite</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Responsable</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Estatus</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>Evidencia / Sello Judicial</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold', textAlign: 'center' }}>Acción</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {localPlazos.map((plazo) => {
+                    const cfg = (() => {
+                      if (plazo.completado) return { colorChip: 'success', label: 'Presentado', bgFila: '#ffffff' };
+                      const hoy = new Date();
+                      hoy.setHours(0,0,0,0);
+                      const fatal = new Date(plazo.fechaFatal + 'T00:00:00');
+                      fatal.setHours(0,0,0,0);
+                      const diff = Math.ceil((fatal.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
+
+                      if (diff < 0) return { colorChip: 'error', label: 'Vencido', bgFila: '#fef2f2' };
+                      if (diff <= 2) return { colorChip: 'error', label: 'CRÍTICO', bgFila: '#fef2f2' };
+                      if (diff <= 5) return { colorChip: 'warning', label: 'Advertencia', bgFila: '#fffbeb' };
+                      return { colorChip: 'info', label: 'A tiempo', bgFila: '#ffffff' };
+                    })();
+
+                    return (
+                      <TableRow key={plazo.id} sx={{ bgcolor: cfg.bgFila }} hover>
+                        <TableCell sx={{ fontWeight: 'medium', py: 1.5 }}>{plazo.descripcion}</TableCell>
+                        <TableCell sx={{ fontWeight: 'bold', color: '#b91c1c' }}>{plazo.fechaFatal}</TableCell>
+                        <TableCell>{plazo.responsable}</TableCell>
+                        <TableCell><Chip label={cfg.label} color={cfg.colorChip} size="small" sx={{ fontWeight: 'bold' }} /></TableCell>
+                        <TableCell sx={{ fontSize: '0.8rem', color: 'text.secondary' }}>
+                          {plazo.completado ? `Folio: ${plazo.folioAcuse} (${plazo.fechaPresentacion})` : 'Exigible ante el tribunal'}
+                        </TableCell>
+                        <TableCell sx={{ textAlign: 'center' }}>
+                          {!plazo.completado ? (
+                            <Button 
+                              variant="contained" 
+                              color="success" 
+                              size="small" 
+                              onClick={() => { setPlazoAActivar(plazo); setOpenCerrarModal(true); }}
+                              sx={{ textTransform: 'none', fontWeight: 'bold', borderRadius: 1.5 }}
+                            >
+                              Cerrar
+                            </Button>
+                          ) : (
+                            <Chip label="Histórico" size="small" variant="outlined" disabled />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Paper>
+      </TabPanel>
+
       {/* MODAL DE AGREGAR CLIENTE EXTENDIDO */}
       <Dialog open={openModal} onClose={() => setOpenModal(false)} fullWidth maxWidth="sm" slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
         <DialogTitle fontWeight="bold">Nueva Ficha de Cliente</DialogTitle>
@@ -523,6 +695,37 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           <DialogActions sx={{ p: 2.5 }}>
             <Button onClick={() => setOpenModal(false)} color="inherit">Cancelar</Button>
             <Button type="submit" variant="contained">Registrar en el Caso</Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
+
+      {/* MODAL: CARGAR PLAZO */}
+      <Dialog open={openPlazoModal} onClose={() => setOpenPlazoModal(false)} fullWidth maxWidth="xs" slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+        <DialogTitle fontWeight="bold">Cargar Término Procesal</DialogTitle>
+        <Box component="form" onSubmit={handleAgregarPlazo}>
+          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <TextField label="Descripción del Término (Ej: Recurso de Apelación)" fullWidth required value={descripcionPlazo} onChange={e => setDescripcionPlazo(e.target.value)} />
+            <TextField label="Fecha Límite Judicial (Fecha Fatal)" type="date" fullWidth required slotProps={{ inputLabel: { shrink: true } }} value={fechaFatalInput} onChange={e => setFechaFatalInput(e.target.value)} />
+            <TextField label="Abogado Litigante Responsable" fullWidth required value={responsablePlazo} onChange={e => setResponsablePlazo(e.target.value)} />
+          </DialogContent>
+          <DialogActions sx={{ p: 2.5 }}>
+            <Button onClick={() => setOpenPlazoModal(false)} color="inherit" sx={{ textTransform: 'none' }}>Cancelar</Button>
+            <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }}>Cargar Término</Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
+
+      {/* MODAL: RESOLVER PLAZO */}
+      <Dialog open={openCerrarModal} onClose={() => setOpenCerrarModal(false)} fullWidth maxWidth="xs" slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+        <Box component="form" onSubmit={handleConfirmarCierrePlazo}>
+          <DialogTitle fontWeight="bold">Desactivar Alerta Fatal</DialogTitle>
+          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Typography variant="body2" color="text.secondary">Ingrese el identificador oficial del sello o acuse digital provisto por el juzgado.</Typography>
+            <TextField label="Número de Folio / Código de Barras del Acuse" fullWidth required value={folioAcuse} onChange={e => setFolioAcuse(e.target.value)} />
+          </DialogContent>
+          <DialogActions sx={{ p: 2.5 }}>
+            <Button onClick={() => setOpenCerrarModal(false)} color="inherit" sx={{ textTransform: 'none' }}>Abortar</Button>
+            <Button type="submit" variant="contained" color="success" sx={{ textTransform: 'none', fontWeight: 'bold' }}>Registrar Presentación</Button>
           </DialogActions>
         </Box>
       </Dialog>
