@@ -3,6 +3,7 @@ import { db, storage } from '../config/firebase';
 import { 
   collection, 
   addDoc, 
+  setDoc,
   getDocs, 
   serverTimestamp, 
   doc, 
@@ -187,8 +188,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [uploadingComunicado, setUploadingComunicado] = useState(false);
   const [uploadProgressComunicado, setUploadProgressComunicado] = useState(0);
 
-  // NUEVOS ESTADOS: Segmentación selectiva de destinatarios
-  const [tipoDestinatario, setTipoDestinatario] = useState('todos'); // 'todos' | 'especificos'
+  // Segmentación selectiva de destinatarios
+  const [tipoDestinatario, setTipoDestinatario] = useState('todos'); 
   const [clientesSeleccionadosIds, setClientesSeleccionadosIds] = useState([]);
   const [filtroDestinatarios, setFiltroDestinatarios] = useState('');
 
@@ -205,7 +206,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     } catch (err) {
       console.error(err);
       setError('Error al cargar la lista de clientes.');
-    } fillado: { 
+    } finally { 
       setLoading(false); 
     }
   };
@@ -419,7 +420,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
 
       await registrarLogAuditoria(
         currentUserEmail,
-        'REGISTRO DE PLAZO',
+        'Registro de Plazo',
         `Se asignó fecha fatal ${fechaFatalInput} para "${descripcionPlazo.trim()}" en el caso "${caso.nombre}"`
       );
 
@@ -508,17 +509,16 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   };
 
   // =====================================================================================
-  // MANEJADOR ACTUALIZADO: Permite la discriminación o segmentación selectiva de destinatarios
+  // MANEJADOR OPTIMIZADO: Adjunto Opcional + Telemetría Atómica nativa para la extensión
   // =====================================================================================
   const handleCreateComunicado = async (e) => {
     e.preventDefault();
-    if (!asuntoComunicado.trim() || !cuerpoComunicado.trim() || !fileComunicado) return;
+    if (!asuntoComunicado.trim() || !cuerpoComunicado.trim()) return;
 
     setUploadingComunicado(true);
     setUploadProgressComunicado(0);
     setError('');
 
-    // Filtrar representados según la elección del abogado en el panel interactivo
     let poolClientesAEnviar = [];
     if (tipoDestinatario === 'todos') {
       poolClientesAEnviar = clientes;
@@ -536,73 +536,107 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       return;
     }
 
-    const storagePath = `casos/${caso.id}/documentos/${Date.now()}_${fileComunicado.name}`;
-    const storageRef = ref(storage, storagePath);
-    const uploadTask = uploadBytesResumable(storageRef, fileComunicado);
+    // Pre-generamos el ID del documento para pasárselo de manera segura y transparente a SendGrid
+    const comunicadoCollectionRef = collection(db, 'casos', caso.id, 'comunicados');
+    const nuevoComunicadoDoc = doc(comunicadoCollectionRef);
+    const comunicadoId = nuevoComunicadoDoc.id;
 
-    uploadTask.on('state_changed', 
-      (snap) => {
-        const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
-        setUploadProgressComunicado(Math.round(progress));
-      },
-      (err) => {
-        setError(`Error al subir el archivo del comunicado a Storage: ${err.message}`);
-        setUploadingComunicado(false);
-      },
-      async () => {
-        try {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+    // Función encapsulada para escribir en la Base de Datos independientemente de si hay adjunto o no
+    const guardarDocumentoEnFirestore = async (pdfNombre = '', pdfUrl = '', storagePath = '') => {
+      try {
+        const modeloDocumentoMail = {
+          from: 'comunicados@iiresodh.org', 
+          to: listaCorreos,
+          template: {
+            name: 'comunicado_institucional',
+            data: {
+              asunto: asuntoComunicado.trim(),
+              cuerpo: cuerpoComunicado.trim()
+            }
+          },
+          // SOLUCIÓN CLAVE: Pasamos las variables dentro de 'sendGrid.customArgs' para que no se pierdan
+          sendGrid: {
+            customArgs: {
+              casoId: caso.id,
+              comunicadoId: comunicadoId
+            }
+          },
+          asunto: asuntoComunicado.trim(),
+          cuerpo: cuerpoComunicado.trim(),
+          fecha_envio: new Date().toISOString(),
+          enviado_por: currentUserEmail,
+          tipo_cobertura: tipoDestinatario,
+          destinatarios_conteo: listaCorreos.length
+        };
 
-          await addDoc(collection(db, 'casos', caso.id, 'comunicados'), {
-            from: 'comunicados@iiresodh.org', 
-            to: listaCorreos,
-            template: {
-              name: 'comunicado_institucional',
-              data: {
-                asunto: asuntoComunicado.trim(),
-                cuerpo: cuerpoComunicado.trim()
+        // Si el usuario cargó un adjunto opcional, inyectamos las propiedades del archivo
+        if (pdfUrl) {
+          modeloDocumentoMail.pdf_nombre = pdfNombre;
+          modeloDocumentoMail.pdf_url = pdfUrl;
+          modeloDocumentoMail.storage_path = storagePath;
+          modeloDocumentoMail.message = {
+            attachments: [
+              {
+                filename: pdfNombre,
+                path: pdfUrl
               }
-            },
-            message: {
-              attachments: [
-                {
-                  filename: fileComunicado.name,
-                  path: downloadURL
-                }
-              ]
-            },
-            asunto: asuntoComunicado.trim(),
-            cuerpo: cuerpoComunicado.trim(),
-            pdf_nombre: fileComunicado.name,
-            pdf_url: downloadURL,
-            storage_path: storagePath,
-            fecha_envio: new Date().toISOString(),
-            enviado_por: currentUserEmail,
-            tipo_cobertura: tipoDestinatario,
-            destinatarios_conteo: listaCorreos.length
-          });
-
-          await registrarLogAuditoria(
-            currentUserEmail,
-            'Envío de Comunicado',
-            `Se registró comunicado masivo: "${asuntoComunicado.trim()}" con destino a ${listaCorreos.length} representados.`
-          );
-
-          setAsuntoComunicado('');
-          setCuerpoComunicado('');
-          setFileComunicado(null);
-          setClientesSeleccionadosIds([]);
-          setFiltroDestinatarios('');
-          setTipoDestinatario('todos');
-          setOpenComunicadoModal(false);
-          fetchComunicados();
-        } catch (ex) {
-          setError(`Error crítico en Firestore al registrar comunicado: ${ex.message}`);
-        } finally {
-          setUploadingComunicado(false);
+            ]
+          };
         }
+
+        // Escritura atómica usando setDoc con el ID pre-calculado
+        await setDoc(nuevoComunicadoDoc, modeloDocumentoMail);
+
+        await registrarLogAuditoria(
+          currentUserEmail,
+          'Envío de Comunicado',
+          `Se registró comunicado: "${asuntoComunicado.trim()}" con destino a ${listaCorreos.length} representados.`
+        );
+
+        setAsuntoComunicado('');
+        setCuerpoComunicado('');
+        setFileComunicado(null);
+        setClientesSeleccionadosIds([]);
+        setFiltroDestinatarios('');
+        setTipoDestinatario('todos');
+        setOpenComunicadoModal(false);
+        fetchComunicados();
+      } catch (ex) {
+        setError(`Error crítico en Firestore al registrar comunicado: ${ex.message}`);
+      } finally {
+        setUploadingComunicado(false);
       }
-    );
+    };
+
+    // Bifurcación del flujo de carga según la presencia del archivo opcional
+    if (fileComunicado) {
+      const storagePath = `casos/${caso.id}/documentos/${Date.now()}_${fileComunicado.name}`;
+      const storageRef = ref(storage, storagePath);
+      const uploadTask = uploadBytesResumable(storageRef, fileComunicado);
+
+      uploadTask.on('state_changed', 
+        (snap) => {
+          const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
+          setUploadProgressComunicado(Math.round(progress));
+        },
+        (err) => {
+          setError(`Error al subir el archivo del comunicado a Storage: ${err.message}`);
+          setUploadingComunicado(false);
+        },
+        async () => {
+          try {
+            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+            await guardarDocumentoEnFirestore(fileComunicado.name, downloadURL, storagePath);
+          } catch (exURL) {
+            setError(`Error obteniendo la URL del archivo: ${exURL.message}`);
+            setUploadingComunicado(false);
+          }
+        }
+      );
+    } else {
+      // Flujo instantáneo: Se despacha sin ningún archivo adjunto
+      await guardarDocumentoEnFirestore();
+    }
   };
 
   const semaforoGeneral = (() => {
@@ -1056,18 +1090,20 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                   </Box>
                   <Typography variant="body2" sx={{ my: 1.5, whiteSpace: 'pre-wrap', color: 'text.primary' }}>{c.cuerpo}</Typography>
                   <Divider sx={{ my: 1 }} />
-                  <Button
-                    component="a"
-                    href={c.pdf_url}
-                    target="_blank"
-                    rel="noopener"
-                    variant="text"
-                    size="small"
-                    startIcon={<File size={14} />}
-                    sx={{ textTransform: 'none', fontWeight: 'bold', p: 0 }}
-                  >
-                    {c.pdf_nombre || 'Ver Documento Adjunto (PDF)'}
-                  </Button>
+                  {c.pdf_url && (
+                    <Button
+                      component="a"
+                      href={c.pdf_url}
+                      target="_blank"
+                      rel="noopener"
+                      variant="text"
+                      size="small"
+                      startIcon={<File size={14} />}
+                      sx={{ textTransform: 'none', fontWeight: 'bold', p: 0 }}
+                    >
+                      {c.pdf_nombre || 'Ver Documento Adjunto (PDF)'}
+                    </Button>
+                  )}
                 </ListItem>
               ))}
             </List>
@@ -1137,7 +1173,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           </Box>
           
           <Box sx={{ mb: 2.5 }}>
-            <TextField label="Dirección Física" fullWidth multiline rows={2} value={direccion} onChange={(e) => setDireccion(e.target.value)} />
+            <TextField label="Dirección Física Completa" fullWidth multiline rows={2} value={direccion} onChange={(e) => setDireccion(e.target.value)} />
           </Box>
           
           <TextField label="Notas Jurídicas Iniciales" fullWidth multiline rows={2} value={notas} onChange={(e) => setNotas(e.target.value)} />
@@ -1278,7 +1314,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         <DialogTitle fontWeight="bold">Redactar y Registrar Comunicado</DialogTitle>
         <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
           <Typography variant="body2" color="text.secondary">
-            El texto y archivo PDF aquí registrados servirán de plantilla e historial de envíos para los representados seleccionados.
+            El texto aquí registrado se enviará a los representados seleccionados. El archivo adjunto es opcional.
           </Typography>
           
           <TextField label="Asunto del Correo / Comunicado" autoFocus fullWidth required disabled={uploadingComunicado} value={asuntoComunicado} onChange={e => setAsuntoComunicado(e.target.value)} />
@@ -1362,6 +1398,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
             )}
           </Box>
 
+          {/* AJUSTE: CAMPO DE ADJUNTO AHORA TOTALMENTE OPCIONAL (REMOCIÓN DE REQUIRED) */}
           <Button 
             variant="outlined" 
             component="label" 
@@ -1370,8 +1407,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
             fullWidth
             sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold', py: 1.5 }}
           >
-            {fileComunicado ? fileComunicado.name : 'Adjuntar Documento del Comunicado (PDF)'}
-            <input type="file" accept="application/pdf" hidden required onChange={(e) => setFileComunicado(e.target.files[0])} />
+            {fileComunicado ? fileComunicado.name : 'Adjuntar Documento del Comunicado (PDF) - Opcional'}
+            <input type="file" accept="application/pdf" hidden onChange={(e) => setFileComunicado(e.target.files[0])} />
           </Button>
 
           {uploadingComunicado && (
@@ -1385,7 +1422,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </DialogContent>
         <DialogActions sx={{ p: 2.5 }}>
           <Button onClick={() => setOpenComunicadoModal(false)} color="inherit" sx={{ textTransform: 'none' }} disabled={uploadingComunicado}>Cancelar</Button>
-          <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }} disabled={uploadingComunicado || !fileComunicado || (tipoDestinatario === 'especificos' && clientesSeleccionadosIds.length === 0)}>
+          <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }} disabled={uploadingComunicado || (tipoDestinatario === 'especificos' && clientesSeleccionadosIds.length === 0)}>
             {uploadingComunicado ? 'Procesando...' : 'Registrar Comunicado'}
           </Button>
         </DialogActions>
