@@ -49,7 +49,12 @@ import {
   List, 
   ListItem, 
   ListItemText,
-  TablePagination
+  TablePagination,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  FormLabel,
+  Checkbox
 } from '@mui/material';
 import { 
   ArrowLeft, 
@@ -182,6 +187,11 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [uploadingComunicado, setUploadingComunicado] = useState(false);
   const [uploadProgressComunicado, setUploadProgressComunicado] = useState(0);
 
+  // NUEVOS ESTADOS: Segmentación selectiva de destinatarios
+  const [tipoDestinatario, setTipoDestinatario] = useState('todos'); // 'todos' | 'especificos'
+  const [clientesSeleccionadosIds, setClientesSeleccionadosIds] = useState([]);
+  const [filtroDestinatarios, setFiltroDestinatarios] = useState('');
+
   const fetchClientes = async () => {
     setLoading(true);
     setError('');
@@ -195,7 +205,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     } catch (err) {
       console.error(err);
       setError('Error al cargar la lista de clientes.');
-    } finally { 
+    } fillado: { 
       setLoading(false); 
     }
   };
@@ -261,7 +271,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       await registrarLogAuditoria(
         currentUserEmail, 
         'Registro de Cliente', 
-        `Se inscribió al representado "${apellidos.trim()}, nombres.trim()" en el litigio [${caso.nombre}]`
+        `Se inscribió al representado "${apellidos.trim()}, ${nombres.trim()}" en el litigio [${caso.nombre}]`
       );
 
       setNombres('');
@@ -409,7 +419,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
 
       await registrarLogAuditoria(
         currentUserEmail,
-        'Registro de Plazo',
+        'REGISTRO DE PLAZO',
         `Se asignó fecha fatal ${fechaFatalInput} para "${descripcionPlazo.trim()}" en el caso "${caso.nombre}"`
       );
 
@@ -497,6 +507,9 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     );
   };
 
+  // =====================================================================================
+  // MANEJADOR ACTUALIZADO: Permite la discriminación o segmentación selectiva de destinatarios
+  // =====================================================================================
   const handleCreateComunicado = async (e) => {
     e.preventDefault();
     if (!asuntoComunicado.trim() || !cuerpoComunicado.trim() || !fileComunicado) return;
@@ -505,12 +518,20 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     setUploadProgressComunicado(0);
     setError('');
 
-    const listaCorreos = clientes
+    // Filtrar representados según la elección del abogado en el panel interactivo
+    let poolClientesAEnviar = [];
+    if (tipoDestinatario === 'todos') {
+      poolClientesAEnviar = clientes;
+    } else {
+      poolClientesAEnviar = clientes.filter(c => clientesSeleccionadosIds.includes(c.id));
+    }
+
+    const listaCorreos = poolClientesAEnviar
       .map(c => c.correo_principal)
       .filter(email => email && email.trim() !== '');
 
     if (listaCorreos.length === 0) {
-      setError('Operación cancelada: No se reportan representados con correos electrónicos válidos en este litigio.');
+      setError('Operación cancelada: No se reportan destinatarios con correos válidos para este envío.');
       setUploadingComunicado(false);
       return;
     }
@@ -556,18 +577,23 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
             pdf_url: downloadURL,
             storage_path: storagePath,
             fecha_envio: new Date().toISOString(),
-            enviado_por: currentUserEmail
+            enviado_por: currentUserEmail,
+            tipo_cobertura: tipoDestinatario,
+            destinatarios_conteo: listaCorreos.length
           });
 
           await registrarLogAuditoria(
             currentUserEmail,
             'Envío de Comunicado',
-            `Se registró comunicado masivo: "${asuntoComunicado.trim()}" con adjunto PDF: "${fileComunicado.name}"`
+            `Se registró comunicado masivo: "${asuntoComunicado.trim()}" con destino a ${listaCorreos.length} representados.`
           );
 
           setAsuntoComunicado('');
           setCuerpoComunicado('');
           setFileComunicado(null);
+          setClientesSeleccionadosIds([]);
+          setFiltroDestinatarios('');
+          setTipoDestinatario('todos');
           setOpenComunicadoModal(false);
           fetchComunicados();
         } catch (ex) {
@@ -1000,7 +1026,12 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
             <Button 
               variant="contained" 
               startIcon={<Plus size={18} />} 
-              onClick={() => setOpenComunicadoModal(true)} 
+              onClick={() => {
+                setClientesSeleccionadosIds([]);
+                setFiltroDestinatarios('');
+                setTipoDestinatario('todos');
+                setOpenComunicadoModal(true);
+              }} 
               sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold' }}
             >
               Redactar Comunicado
@@ -1019,7 +1050,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                     <Box>
                       <Typography variant="subtitle1" fontWeight="bold" color="primary.main">{c.asunto}</Typography>
                       <Typography variant="caption" color="text.secondary">
-                        {`Enviado por: ${c.enviado_por} | Fecha: ${c.fecha_envio ? new Date(c.fecha_envio).toLocaleString() : ''}`}
+                        {`Enviado por: ${c.enviado_por} | Fecha: ${c.fecha_envio ? new Date(c.fecha_envio).toLocaleString() : ''} | Cobertura: ${c.tipo_cobertura === 'todos' ? 'Todos los representados' : 'Segmentación selectiva'} (${c.destinatarios_conteo || 0} correos)`}
                       </Typography>
                     </Box>
                   </Box>
@@ -1044,7 +1075,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Paper>
       </TabPanel>
 
-      {/* MODAL DE AGREGAR CLIENTE EXTENDIDO - DETIENE ANULACIÓN DE FOCO ARIA DEFINITIVAMENTE */}
+      {/* MODAL DE AGREGAR CLIENTE EXTENDIDO */}
       <Dialog 
         open={openModal} 
         onClose={() => setOpenModal(false)} 
@@ -1117,7 +1148,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </DialogActions>
       </Dialog>
 
-      {/* MODAL: CARGAR PLAZO - DETIENE ANULACIÓN DE FOCO ARIA DEFINITIVAMENTE */}
+      {/* MODAL: CARGAR PLAZO */}
       <Dialog 
         open={openPlazoModal} 
         onClose={() => setOpenPlazoModal(false)} 
@@ -1144,7 +1175,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </DialogActions>
       </Dialog>
 
-      {/* MODAL INTERMEDIO: INGRESO DE METADATOS PARA EL DOCUMENTO COMÚN - DETIENE ANULACIÓN DE FOCO ARIA DEFINITIVAMENTE */}
+      {/* MODAL INTERMEDIO: INGRESO DE METADATOS PARA EL DOCUMENTO COMÚN */}
       <Dialog 
         open={openUploadModal} 
         onClose={() => { if (!uploadingDoc) { setOpenUploadModal(false); setFileComunSeleccionado(null); } }} 
@@ -1174,7 +1205,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </DialogActions>
       </Dialog>
 
-      {/* MODAL: RESOLVER PLAZO CON ARCHIVO PROBATORIO Y METADATOS OBLIGATORIOS - DETIENE ANULACIÓN DE FOCO ARIA DEFINITIVAMENTE */}
+      {/* MODAL: RESOLVER PLAZO CON ARCHIVO PROBATORIO Y METADATOS OBLIGATORIOS */}
       <Dialog 
         open={openCerrarModal} 
         onClose={() => { if (!uploadingPlazoDoc) { setOpenCerrarModal(false); setFileProbatorio(null); } }} 
@@ -1228,7 +1259,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </DialogActions>
       </Dialog>
 
-      {/* MODAL: REDACTAR COMUNICADO MASIVO - DETIENE ANULACIÓN DE FOCO ARIA DEFINITIVAMENTE */}
+      {/* MODAL: REDACTAR COMUNICADO MASIVO O SELECTIVO CON FILTRO DE DESTINATARIOS */}
       <Dialog 
         open={openComunicadoModal} 
         onClose={() => { if (!uploadingComunicado) { setOpenComunicadoModal(false); setFileComunicado(null); } }} 
@@ -1244,14 +1275,93 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           } 
         }}
       >
-        <DialogTitle fontWeight="bold">Redactar y Registrar Comunicado Masivo</DialogTitle>
+        <DialogTitle fontWeight="bold">Redactar y Registrar Comunicado</DialogTitle>
         <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
           <Typography variant="body2" color="text.secondary">
-            El texto y archivo PDF aquí registrados servirán de plantilla e historial de envíos masivos para los representados de este litigio.
+            El texto y archivo PDF aquí registrados servirán de plantilla e historial de envíos para los representados seleccionados.
           </Typography>
-          <TextField label="Asunto del Correo / Comunicado" autoFocus fullWidth required disabled={uploadingComunicado} value={asuntoComunicado} onChange={e => setAsuntoComunicado(e.target.value)} />
-          <TextField label="Cuerpo del Mensaje (Texto del Email)" fullWidth multiline rows={6} required disabled={uploadingComunicado} value={cuerpoComunicado} onChange={e => setCuerpoComunicado(e.target.value)} />
           
+          <TextField label="Asunto del Correo / Comunicado" autoFocus fullWidth required disabled={uploadingComunicado} value={asuntoComunicado} onChange={e => setAsuntoComunicado(e.target.value)} />
+          <TextField label="Cuerpo del Mensaje (Texto del Email)" fullWidth multiline rows={4} required disabled={uploadingComunicado} value={cuerpoComunicado} onChange={e => setCuerpoComunicado(e.target.value)} />
+          
+          {/* CONTROL DE SEGMENTACIÓN DE DESTINATARIOS */}
+          <Box sx={{ bgcolor: '#f8fafc', p: 2, borderRadius: 2, border: '1px solid #e2e8f0' }}>
+            <FormLabel component="legend" style={{ fontWeight: 'bold', fontSize: '0.85rem', color: '#1a365d', marginBottom: '8px' }}>
+              Destinatarios del Mensaje
+            </FormLabel>
+            <RadioGroup
+              row
+              value={tipoDestinatario}
+              onChange={(e) => setTipoDestinatario(e.target.value)}
+              disabled={uploadingComunicado}
+            >
+              <FormControlLabel value="todos" control={<Radio size="small" />} label={`Enviar a todos (${clientes.length})`} />
+              <FormControlLabel value="especificos" control={<Radio size="small" />} label="Seleccionar específicos" />
+            </RadioGroup>
+
+            {/* PANEL DESPLEGABLE: SELECCIÓN MANUAL DE CLIENTES CON BUSCADOR DINÁMICO */}
+            {tipoDestinatario === 'especificos' && (
+              <Box sx={{ mt: 1.5, pt: 1.5, borderTop: '1px dashed #cbd5e1' }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  placeholder="Buscar destinatario por nombre o país..."
+                  value={filtroDestinatarios}
+                  onChange={(e) => setFiltroDestinatarios(e.target.value)}
+                  disabled={uploadingComunicado}
+                  InputProps={{
+                    startAdornment: (
+                      <Box sx={{ color: 'text.secondary', display: 'flex', mr: 1 }}><Search size={16} /></Box>
+                    ),
+                  }}
+                  sx={{ mb: 1, bgcolor: '#ffffff' }}
+                />
+                
+                <Box sx={{ maxHeight: 150, overflowY: 'auto', display: 'flex', flexDirection: 'column', bgcolor: '#ffffff', p: 1, borderRadius: 1.5, border: '1px solid #e2e8f0' }}>
+                  {clientes
+                    .filter(c => {
+                      const term = filtroDestinatarios.toLowerCase().trim();
+                      if (!term) return true;
+                      const matchesName = `${c.nombres} ${c.apellidos}`.toLowerCase().includes(term);
+                      const matchesCountry = (c.pais || '').toLowerCase().includes(term);
+                      return matchesName || matchesCountry;
+                    })
+                    .map((c) => {
+                      const isChecked = clientesSeleccionadosIds.includes(c.id);
+                      return (
+                        <FormControlLabel
+                          key={c.id}
+                          control={
+                            <Checkbox 
+                              size="small"
+                              checked={isChecked}
+                              disabled={uploadingComunicado}
+                              onChange={() => {
+                                if (isChecked) {
+                                  setClientesSeleccionadosIds(prev => prev.filter(id => id !== c.id));
+                                } else {
+                                  setClientesSeleccionadosIds(prev => [...prev, c.id]);
+                                }
+                              }}
+                            />
+                          }
+                          label={
+                            <Typography variant="body2">
+                              <strong>{c.apellidos}, {c.nombres}</strong> {c.correo_principal ? `(${c.correo_principal})` : '[Sin correo]'}
+                            </Typography>
+                          }
+                          sx={{ my: -0.25 }}
+                        />
+                      );
+                    })}
+                </Box>
+                <Typography variant="caption" color="primary.main" sx={{ display: 'block', mt: 1, fontWeight: 'bold' }}>
+                  {`Seleccionados: ${clientesSeleccionadosIds.length} representados.`}
+                </Typography>
+              </Box>
+            )}
+          </Box>
+
           <Button 
             variant="outlined" 
             component="label" 
@@ -1274,8 +1384,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           )}
         </DialogContent>
         <DialogActions sx={{ p: 2.5 }}>
-          <Button onClick={() => { setOpenComunicadoModal(false); setFileComunicado(null); }} color="inherit" sx={{ textTransform: 'none' }} disabled={uploadingComunicado}>Cancelar</Button>
-          <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }} disabled={uploadingComunicado || !fileComunicado}>
+          <Button onClick={() => setOpenComunicadoModal(false)} color="inherit" sx={{ textTransform: 'none' }} disabled={uploadingComunicado}>Cancelar</Button>
+          <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }} disabled={uploadingComunicado || !fileComunicado || (tipoDestinatario === 'especificos' && clientesSeleccionadosIds.length === 0)}>
             {uploadingComunicado ? 'Procesando...' : 'Registrar Comunicado'}
           </Button>
         </DialogActions>
