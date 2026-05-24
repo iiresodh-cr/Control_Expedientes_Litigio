@@ -497,9 +497,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     );
   };
 
-  // =====================================================================================
-  // MANEJADOR CORREGIDO: Acopla los parámetros de adjuntos dentro del nodo estructural 'message'
-  // =====================================================================================
   const handleCreateComunicado = async (e) => {
     e.preventDefault();
     if (!asuntoComunicado.trim() || !cuerpoComunicado.trim() || !fileComunicado) return;
@@ -535,8 +532,10 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         try {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
-          // Estructuración bajo los parámetros estrictos de la extensión para procesar el PDF
+          // REFORZADO: Forzar el parámetro 'from' a nivel de documento raíz
+          // IMPORTANTE: Modifica 'comunicados@iiresodh.org' por el remitente verificado en tu cuenta de SendGrid
           await addDoc(collection(db, 'casos', caso.id, 'comunicados'), {
+            from: 'comunicados@iiresodh.org', 
             to: listaCorreos,
             template: {
               name: 'comunicado_institucional',
@@ -545,7 +544,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                 cuerpo: cuerpoComunicado.trim()
               }
             },
-            // CORRECCIÓN CLAVE: Toda opción avanzada y adjuntos DEBEN vivir encapsulados en el objeto 'message'
             message: {
               attachments: [
                 {
