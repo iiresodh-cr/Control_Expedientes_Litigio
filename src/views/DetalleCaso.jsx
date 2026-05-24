@@ -492,6 +492,9 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     );
   };
 
+  // =====================================================================================
+  // MANEJADOR ACTUALIZADO: Vincula los 500 representados a la cola automatizada de SendGrid
+  // =====================================================================================
   const handleCreateComunicado = async (e) => {
     e.preventDefault();
     if (!asuntoComunicado.trim() || !cuerpoComunicado.trim() || !fileComunicado) return;
@@ -499,6 +502,17 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     setUploadingComunicado(true);
     setUploadProgressComunicado(0);
     setError('');
+
+    // Extraer de memoria limpia todos los correos válidos de los representados adscritos
+    const listaCorreos = clientes
+      .map(c => c.correo_principal)
+      .filter(email => email && email.trim() !== '');
+
+    if (listaCorreos.length === 0) {
+      setError('Operación cancelada: No se reportan representados con correos electrónicos válidos en este litigio.');
+      setUploadingComunicado(false);
+      return;
+    }
 
     const storagePath = `casos/${caso.id}/documentos/${Date.now()}_${fileComunicado.name}`;
     const storageRef = ref(storage, storagePath);
@@ -517,7 +531,24 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         try {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
+          // Estructuración del documento bajo el esquema oficial que requiere firestore-send-email
           await addDoc(collection(db, 'casos', caso.id, 'comunicados'), {
+            // Canales de inyección masiva para la extensión
+            to: listaCorreos,
+            template: {
+              name: 'comunicado_institucional', // Vinculado a tu colección de plantillas con logo
+              data: {
+                asunto: asuntoComunicado.trim(),
+                cuerpo: cuerpoComunicado.trim()
+              }
+            },
+            attachments: [
+              {
+                filename: fileComunicado.name,
+                path: downloadURL
+              }
+            ],
+            // Historial inmutadero de visualización local
             asunto: asuntoComunicado.trim(),
             cuerpo: cuerpoComunicado.trim(),
             pdf_nombre: fileComunicado.name,
