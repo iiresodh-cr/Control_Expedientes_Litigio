@@ -492,9 +492,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     );
   };
 
-  // =====================================================================================
-  // MANEJADOR ACTUALIZADO: Vincula los 500 representados a la cola automatizada de SendGrid
-  // =====================================================================================
   const handleCreateComunicado = async (e) => {
     e.preventDefault();
     if (!asuntoComunicado.trim() || !cuerpoComunicado.trim() || !fileComunicado) return;
@@ -503,7 +500,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     setUploadProgressComunicado(0);
     setError('');
 
-    // Extraer de memoria limpia todos los correos válidos de los representados adscritos
     const listaCorreos = clientes
       .map(c => c.correo_principal)
       .filter(email => email && email.trim() !== '');
@@ -531,12 +527,10 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         try {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
-          // Estructuración del documento bajo el esquema oficial que requiere firestore-send-email
           await addDoc(collection(db, 'casos', caso.id, 'comunicados'), {
-            // Canales de inyección masiva para la extensión
             to: listaCorreos,
             template: {
-              name: 'comunicado_institucional', // Vinculado a tu colección de plantillas con logo
+              name: 'comunicado_institucional',
               data: {
                 asunto: asuntoComunicado.trim(),
                 cuerpo: cuerpoComunicado.trim()
@@ -548,7 +542,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                 path: downloadURL
               }
             ],
-            // Historial inmutadero de visualización local
             asunto: asuntoComunicado.trim(),
             cuerpo: cuerpoComunicado.trim(),
             pdf_nombre: fileComunicado.name,
@@ -1038,7 +1031,14 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       </TabPanel>
 
       {/* MODAL DE AGREGAR CLIENTE EXTENDIDO */}
-      <Dialog open={openModal} onClose={() => setOpenModal(false)} fullWidth maxWidth="sm" slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+      <Dialog 
+        open={openModal} 
+        onClose={() => setOpenModal(false)} 
+        fullWidth 
+        maxWidth="sm" 
+        disableEnforceFocus
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+      >
         <DialogTitle fontWeight="bold">Nueva Ficha de Cliente</DialogTitle>
         <Box component="form" onSubmit={handleCreateCliente}>
           <DialogContent dividers>
@@ -1099,7 +1099,14 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       </Dialog>
 
       {/* MODAL: CARGAR PLAZO */}
-      <Dialog open={openPlazoModal} onClose={() => setOpenPlazoModal(false)} fullWidth maxWidth="xs" slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+      <Dialog 
+        open={openPlazoModal} 
+        onClose={() => setOpenPlazoModal(false)} 
+        fullWidth 
+        maxWidth="xs" 
+        disableEnforceFocus
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+      >
         <DialogTitle fontWeight="bold">Cargar Término Procesal</DialogTitle>
         <Box component="form" onSubmit={handleAgregarPlazo}>
           <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -1119,6 +1126,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         onClose={() => { if (!uploadingDoc) { setOpenUploadModal(false); setFileComunSeleccionado(null); } }} 
         fullWidth 
         maxWidth="xs" 
+        disableEnforceFocus
         slotProps={{ paper: { sx: { borderRadius: 3 } } }}
       >
         <Box component="form" onSubmit={handleConfirmarSubidaComun}>
@@ -1143,6 +1151,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         onClose={() => { if (!uploadingPlazoDoc) { setOpenCerrarModal(false); setFileProbatorio(null); } }} 
         fullWidth 
         maxWidth="xs" 
+        disableEnforceFocus
         slotProps={{ paper: { sx: { borderRadius: 3 } } }}
       >
         <Box component="form" onSubmit={handleConfirmarCierrePlazo}>
@@ -1191,6 +1200,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         onClose={() => { if (!uploadingComunicado) { setOpenComunicadoModal(false); setFileComunicado(null); } }} 
         fullWidth 
         maxWidth="sm" 
+        disableEnforceFocus
         slotProps={{ paper: { sx: { borderRadius: 3 } } }}
       >
         <Box component="form" onSubmit={handleCreateComunicado}>
