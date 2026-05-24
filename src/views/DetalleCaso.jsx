@@ -497,6 +497,9 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     );
   };
 
+  // =====================================================================================
+  // MANEJADOR CORREGIDO: Acopla los parámetros de adjuntos dentro del nodo estructural 'message'
+  // =====================================================================================
   const handleCreateComunicado = async (e) => {
     e.preventDefault();
     if (!asuntoComunicado.trim() || !cuerpoComunicado.trim() || !fileComunicado) return;
@@ -532,6 +535,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         try {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
+          // Estructuración bajo los parámetros estrictos de la extensión para procesar el PDF
           await addDoc(collection(db, 'casos', caso.id, 'comunicados'), {
             to: listaCorreos,
             template: {
@@ -541,12 +545,15 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                 cuerpo: cuerpoComunicado.trim()
               }
             },
-            attachments: [
-              {
-                filename: fileComunicado.name,
-                path: downloadURL
-              }
-            ],
+            // CORRECCIÓN CLAVE: Toda opción avanzada y adjuntos DEBEN vivir encapsulados en el objeto 'message'
+            message: {
+              attachments: [
+                {
+                  filename: fileComunicado.name,
+                  path: downloadURL
+                }
+              ]
+            },
             asunto: asuntoComunicado.trim(),
             cuerpo: cuerpoComunicado.trim(),
             pdf_nombre: fileComunicado.name,
@@ -1041,7 +1048,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Paper>
       </TabPanel>
 
-      {/* MODAL DE AGREGAR CLIENTE EXTENDIDO - SE ACOPLA LA LOGICA FORM AL CORAZON DEL DIALOG */}
+      {/* MODAL DE AGREGAR CLIENTE EXTENDIDO */}
       <Dialog 
         open={openModal} 
         onClose={() => setOpenModal(false)} 
@@ -1112,7 +1119,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </DialogActions>
       </Dialog>
 
-      {/* MODAL: CARGAR PLAZO - SE ELIMINAN WRAPPERS EXTERNOS EN FAVOR DE SLOTPROPS DE CORRECCIÓN ARIA */}
+      {/* MODAL: CARGAR PLAZO */}
       <Dialog 
         open={openPlazoModal} 
         onClose={() => setOpenPlazoModal(false)} 
