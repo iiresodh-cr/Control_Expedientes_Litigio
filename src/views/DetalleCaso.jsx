@@ -153,8 +153,16 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [uploadingPlazoDoc, setUploadingPlazoDoc] = useState(false);
   const [uploadProgressPlazoDoc, setUploadProgressPlazoDoc] = useState(0);
 
-  // Estado para el área de arrastre (Drag and Drop)
+  // Nuevos estados para metadatos del documento de plazos
+  const [descripcionProbatorio, setDescripcionProbatorio] = useState('');
+  const [fechaDocumentoProbatorio, setFechaDocumentoProbatorio] = useState('');
+
+  // Estado para el área de arrastre (Drag and Drop) e inputs de documentos comunes
   const [isDragging, setIsDragging] = useState(false);
+  const [openUploadModal, setOpenUploadModal] = useState(false);
+  const [fileComunSeleccionado, setFileComunSeleccionado] = useState(null);
+  const [descripcionComun, setDescripcionComun] = useState('');
+  const [fechaDocumentoComun, setFechaDocumentoComun] = useState('');
 
   const fetchClientes = async () => {
     setLoading(true);
@@ -241,7 +249,10 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     }
   };
 
-  const ejecutarCargaArchivoComun = async (file) => {
+  // =====================================================================================
+  // MOTOR UNIFICADO DE CARGA: Almacena físicamente e incorpora descripción y fecha
+  // =====================================================================================
+  const ejecutarCargaArchivoComun = async (file, desc, fechaDoc) => {
     if (!file) return;
 
     setUploadingDoc(true);
@@ -267,13 +278,15 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           nombre: file.name,
           url: downloadURL,
           storage_path: storagePath,
+          descripcion: desc.trim(),
+          fecha_documento: fechaDoc,
           fecha_subida: new Date().toISOString()
         });
 
         await registrarLogAuditoria(
           currentUserEmail, 
           'Carga de Doc Común', 
-          `Se subió el documento global "${file.name}" para el caso "${caso.nombre}"`
+          `Se subió el documento global "${file.name}" con descripción: "${desc.trim()}" para el caso "${caso.nombre}"`
         );
         
         setUploadingDoc(false);
@@ -284,14 +297,36 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
 
   const handleUploadDocComun = async (e) => {
     const file = e.target.files[0];
-    if (file) await ejecutarCargaArchivoComun(file);
+    if (file) {
+      setFileComunSeleccionado(file);
+      setOpenUploadModal(true);
+    }
   };
 
   const handleDropDocComun = async (e) => {
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files[0];
-    if (file) await ejecutarCargaArchivoComun(file);
+    if (file) {
+      setFileComunSeleccionado(file);
+      setOpenUploadModal(true);
+    }
+  };
+
+  const handleConfirmarSubidaComun = async (e) => {
+    e.preventDefault();
+    if (!fileComunSeleccionado || !descripcionComun.trim() || !fechaDocumentoComun) return;
+
+    const file = fileComunSeleccionado;
+    const desc = descripcionComun;
+    const fecha = fechaDocumentoComun;
+
+    setOpenUploadModal(false);
+    setFileComunSeleccionado(null);
+    setDescripcionComun('');
+    setFechaDocumentoComun('');
+
+    await ejecutarCargaArchivoComun(file, desc, fecha);
   };
 
   const handleDeleteDocComun = async (docId, storagePath) => {
@@ -327,6 +362,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       fechaPresentacion: '',
       documentoProbatorioNombre: '',
       documentoProbatorioUrl: '',
+      documentoProbatorioDescripcion: '',
+      documentoProbatorioFechaDocumento: '',
       storage_path: ''
     };
 
@@ -353,7 +390,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
 
   const handleConfirmarCierrePlazo = async (e) => {
     e.preventDefault();
-    if (!plazoAActivar || !fileProbatorio) return;
+    if (!plazoAActivar || !fileProbatorio || !descripcionProbatorio.trim() || !fechaDocumentoProbatorio) return;
 
     setUploadingPlazoDoc(true);
     setUploadProgressPlazoDoc(0);
@@ -376,10 +413,13 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         try {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
 
+          // Inyectar en Documentos Comunes incorporando metadatos estructurados
           await addDoc(collection(db, 'casos', caso.id, 'documentos_comunes'), {
             nombre: fileProbatorio.name,
             url: downloadURL,
             storage_path: storagePath,
+            descripcion: descripcionProbatorio.trim(),
+            fecha_documento: fechaDocumentoProbatorio,
             fecha_subida: new Date().toISOString()
           });
 
@@ -391,6 +431,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                 fechaPresentacion: new Date().toLocaleString(),
                 documentoProbatorioNombre: fileProbatorio.name,
                 documentoProbatorioUrl: downloadURL,
+                documentoProbatorioDescripcion: descripcionProbatorio.trim(),
+                documentoProbatorioFechaDocumento: fechaDocumentoProbatorio,
                 storage_path: storagePath
               };
             }
@@ -408,6 +450,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
 
           setLocalPlazos(plazosModificados);
           setFileProbatorio(null);
+          setDescripcionProbatorio('');
+          setFechaDocumentoProbatorio('');
           setPlazoAActivar(null);
           setOpenCerrarModal(false);
           fetchDocsComunes(); 
@@ -623,7 +667,16 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                   >
                     <ListItemText 
                       primary={d.nombre} 
-                      secondary={d.fecha_subida ? `Subido: ${new Date(d.fecha_subida).toLocaleString()}` : ''} 
+                      secondary={
+                        <Box component="span" sx={{ display: 'block', mt: 0.5 }}>
+                          <Typography variant="body2" component="span" color="text.primary" sx={{ display: 'block', fontWeight: 'medium' }}>
+                            {d.descripcion || 'Sin descripción configurada.'}
+                          </Typography>
+                          <Typography variant="caption" component="span" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+                            {`Fecha Doc: ${d.fecha_documento || 'No especificada'} | Subido: ${d.fecha_subida ? new Date(d.fecha_subida).toLocaleString() : ''}`}
+                          </Typography>
+                        </Box>
+                      } 
                     />
                   </Button>
                   <IconButton 
@@ -704,18 +757,26 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                         <TableCell><Chip label={cfg.label} color={cfg.colorChip} size="small" sx={{ fontWeight: 'bold' }} /></TableCell>
                         <TableCell sx={{ fontSize: '0.8rem' }}>
                           {plazo.completado ? (
-                            <Button
-                              component="a"
-                              href={plazo.documentoProbatorioUrl}
-                              target="_blank"
-                              rel="noopener"
-                              variant="text"
-                              size="small"
-                              startIcon={<File size={14} />}
-                              sx={{ textTransform: 'none', p: 0, fontWeight: 'bold', justifyContent: 'flex-start' }}
-                            >
-                              {plazo.documentoProbatorioNombre || 'Ver Archivo'}
-                            </Button>
+                            <Box>
+                              <Button
+                                component="a"
+                                href={plazo.documentoProbatorioUrl}
+                                target="_blank"
+                                rel="noopener"
+                                variant="text"
+                                size="small"
+                                startIcon={<File size={14} />}
+                                sx={{ textTransform: 'none', p: 0, fontWeight: 'bold', justifyContent: 'flex-start' }}
+                              >
+                                {plazo.documentoProbatorioNombre || 'Ver Archivo'}
+                              </Button>
+                              <Typography variant="caption" display="block" color="text.primary" sx={{ fontWeight: 'medium', mt: 0.5 }}>
+                                {plazo.documentoProbatorioDescripcion}
+                              </Typography>
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                Fecha Doc: {plazo.documentoProbatorioFechaDocumento || 'No asignada'}
+                              </Typography>
+                            </Box>
                           ) : (
                             <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
                               Exigible ante la instancia
@@ -808,7 +869,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Box>
       </Dialog>
 
-      {/* MODAL: CARGAR PLAZO SIN EL CAMPO ABOGADO RESPONSABLE */}
+      {/* MODAL: CARGAR PLAZO */}
       <Dialog open={openPlazoModal} onClose={() => setOpenPlazoModal(false)} fullWidth maxWidth="xs" slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
         <DialogTitle fontWeight="bold">Cargar Término Procesal</DialogTitle>
         <Box component="form" onSubmit={handleAgregarPlazo}>
@@ -823,7 +884,31 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Box>
       </Dialog>
 
-      {/* MODAL: RESOLVER PLAZO CON ARCHIVO PROBATORIO OBLIGATORIO */}
+      {/* MODAL INTERMEDIO: INGRESO DE METADATOS PARA EL DOCUMENTO COMÚN */}
+      <Dialog 
+        open={openUploadModal} 
+        onClose={() => { if (!uploadingDoc) { setOpenUploadModal(false); setFileComunSeleccionado(null); } }} 
+        fullWidth 
+        maxWidth="xs" 
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+      >
+        <Box component="form" onSubmit={handleConfirmarSubidaComun}>
+          <DialogTitle fontWeight="bold">Metadatos del Documento Común</DialogTitle>
+          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+            <Typography variant="body2" color="text.secondary">
+              Archivo detectado: <strong>{fileComunSeleccionado?.name}</strong>
+            </Typography>
+            <TextField label="Descripción Material del Documento" fullWidth required value={descripcionComun} onChange={e => setDescripcionComun(e.target.value)} />
+            <TextField label="Fecha de Emisión del Documento" type="date" fullWidth required slotProps={{ inputLabel: { shrink: true } }} value={fechaDocumentoComun} onChange={e => setFechaDocumentoComun(e.target.value)} />
+          </DialogContent>
+          <DialogActions sx={{ p: 2.5 }}>
+            <Button onClick={() => { setOpenUploadModal(false); setFileComunSeleccionado(null); }} color="inherit" sx={{ textTransform: 'none' }}>Cancelar</Button>
+            <Button type="submit" variant="contained" sx={{ textTransform: 'none', fontWeight: 'bold' }}>Subir Documento</Button>
+          </DialogActions>
+        </Box>
+      </Dialog>
+
+      {/* MODAL: RESOLVER PLAZO CON ARCHIVO PROBATORIO Y METADATOS OBLIGATORIOS */}
       <Dialog 
         open={openCerrarModal} 
         onClose={() => { if (!uploadingPlazoDoc) { setOpenCerrarModal(false); setFileProbatorio(null); } }} 
@@ -833,7 +918,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       >
         <Box component="form" onSubmit={handleConfirmarCierrePlazo}>
           <DialogTitle fontWeight="bold">Subsanar y Cargar Documento Probatorio</DialogTitle>
-          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
             <Typography variant="body2" color="text.secondary">
               Para dar por solventado este plazo ante instancias internacionales, debe anexar obligatoriamente el documento sustentatorio en formato digital.
             </Typography>
@@ -849,6 +934,9 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
               {fileProbatorio ? fileProbatorio.name : 'Seleccionar Documento Probatorio'}
               <input type="file" accept="application/pdf,image/*" hidden required onChange={(e) => setFileProbatorio(e.target.files[0])} />
             </Button>
+
+            <TextField label="Descripción Completa de la Prueba" fullWidth required disabled={uploadingPlazoDoc} value={descripcionProbatorio} onChange={e => setDescripcionProbatorio(e.target.value)} />
+            <TextField label="Fecha de Emisión de la Prueba" type="date" fullWidth required disabled={uploadingPlazoDoc} slotProps={{ inputLabel: { shrink: true } }} value={fechaDocumentoProbatorio} onChange={e => setFechaDocumentoProbatorio(e.target.value)} />
 
             {uploadingPlazoDoc && (
               <Box sx={{ width: '100%', mt: 1 }}>
