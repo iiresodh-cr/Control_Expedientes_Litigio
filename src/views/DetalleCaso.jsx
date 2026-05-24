@@ -93,8 +93,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       setClientes(snapClientes.docs.map(d => ({ id: d.id, ...d.data() })));
 
       // 2. Cargar Documentos Comunes del Litigio
-      const docsComunesRef = collection(db, 'casos', instanciaCaso.id, 'documentos_comunes');
-      const snapDocs = await getDocs(docsComunesRef);
+      const documentosComunesRef = collection(db, 'casos', instanciaCaso.id, 'documentos_comunes');
+      const snapDocs = await getDocs(documentosComunesRef);
       setDocumentosComunes(snapDocs.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (err) {
       setError('Acceso denegado: Restricción perimetral al consultar subcolecciones del caso.');
@@ -147,7 +147,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       await addDoc(collection(db, 'logs_auditoria'), {
         usuario: currentUserEmail,
         accion: 'AGREGAR_PLAZO_PROCESAL',
-        detalles: `Se fijó término fatal para ${fechaFatalInput} en Exp. ${instanciaCaso.numeroExpediente || instanciaCaso.id}`,
+        detalles: `Se fijó término fatal para ${fechaFatalInput} en Exp. ${instanciaCaso.numeroExpediente}`,
         fecha: serverTimestamp()
       });
 
@@ -186,7 +186,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       await addDoc(collection(db, 'logs_auditoria'), {
         usuario: currentUserEmail,
         accion: 'DESACTIVAR_PLAZO_PROCESAL',
-        detalles: `Plazo cerrado en Exp. ${instanciaCaso.numeroExpediente || instanciaCaso.id}. Sello judicial Folio: ${folioAcuse}`,
+        detalles: `Plazo cerrado en Exp. ${instanciaCaso.numeroExpediente}. Sello judicial Folio: ${folioAcuse}`,
         fecha: serverTimestamp()
       });
 
@@ -235,7 +235,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
 
       setContenidoNota('');
       setOpenNotaModal(false);
-      cargarDatosSpecificosCliente(clienteSeleccionado);
+      cargarDatosEspecificosCliente(clienteSeleccionado);
     } catch (err) {
       setError('Error al resguardar nota jurídica.');
     }
@@ -255,7 +255,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       setNombreDocCliente('');
       setUrlDocCliente('');
       setOpenDocClienteModal(false);
-      cargarDatosSpecificosCliente(clienteSeleccionado);
+      cargarDatosEspecificosCliente(clienteSeleccionado);
     } catch (err) {
       setError('Error al registrar documento del cliente.');
     }
@@ -317,21 +317,21 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           EXPEDIENTE JUDICIAL ENTERPRISE
         </Typography>
         <Typography variant="h5" fontWeight="bold" color="#1a365d" gutterBottom>
-          {instanciaCaso.nombreCaso || instanciaCaso.descripcion || 'Expediente Sin Título'}
+          {instanciaCaso.nombreCaso}
         </Typography>
         <Divider sx={{ my: 2 }} />
         <Grid container spacing={2}>
           <Grid item xs={6} sm={3}>
             <Typography variant="caption" color="text.secondary" display="block">No. Expediente</Typography>
-            <Typography variant="body2" fontWeight="bold" color="#1a365d">{instanciaCaso.numeroExpediente || 'S/N'}</Typography>
+            <Typography variant="body2" fontWeight="bold" color="#1a365d">{instanciaCaso.numeroExpediente}</Typography>
           </Grid>
           <Grid item xs={6} sm={3}>
             <Typography variant="caption" color="text.secondary" display="block">Materia Litigiosa</Typography>
-            <Typography variant="body2" fontWeight="bold">{instanciaCaso.materia || 'General'}</Typography>
+            <Typography variant="body2" fontWeight="bold">{instanciaCaso.materia}</Typography>
           </Grid>
           <Grid item xs={6} sm={3}>
             <Typography variant="caption" color="text.secondary" display="block">Abogado Asignador</Typography>
-            <Typography variant="body2" fontSize="0.85rem">{instanciaCaso.creadoPor || 'Carga Histórica'}</Typography>
+            <Typography variant="body2" fontSize="0.85rem">{instanciaCaso.creadoPor}</Typography>
           </Grid>
           <Grid item xs={6} sm={3}>
             <Typography variant="caption" color="text.secondary" display="block">Clientes Vinculados</Typography>
