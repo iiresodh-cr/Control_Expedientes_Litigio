@@ -30,7 +30,7 @@ import {
   TextField,
   MenuItem
 } from '@mui/material';
-import { FolderPlus, Eye, AlertTriangle } from 'lucide-react';
+import { FolderPlus, Eye } from 'lucide-react';
 
 export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
   const [casos, setCasos] = useState([]);
@@ -70,8 +70,7 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
         numeroExpediente: nuevoNumero,
         materia: nuevoMateria,
         creadoPor: currentUserEmail,
-        fechaCreacion: serverTimestamp(),
-        plazos: [] 
+        fechaCreacion: serverTimestamp()
       });
 
       await addDoc(collection(db, 'logs_auditoria'), {
@@ -88,35 +87,6 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
       fetchCasos();
     } catch (err) {
       setError('Acceso denegado: No posee autorizaciones de escritura en el servidor legal.');
-    }
-  };
-
-  const calcularSemaforoDePlazos = (plazos = []) => {
-    const plazosActivos = plazos.filter(p => !p.completado);
-    if (plazosActivos.length === 0) {
-      return { label: 'Sin plazos activos', color: 'default', bcolor: '#e2e8f0', textColor: '#64748b', anim: false };
-    }
-
-    const fechasEnMilisegundos = plazosActivos.map(p => new Date(p.fechaFatal + 'T00:00:00').getTime());
-    const fechaMasProximaMs = Math.min(...fechasEnMilisegundos);
-    
-    const hoy = new Date();
-    hoy.setHours(0,0,0,0);
-    
-    const fechaFatal = new Date(fechaMasProximaMs);
-    fechaFatal.setHours(0,0,0,0);
-
-    const diferenciaTiempo = fechaFatal.getTime() - hoy.getTime();
-    const diasRestantes = Math.ceil(diferenciaTiempo / (1000 * 60 * 60 * 24));
-
-    if (diasRestantes < 0) {
-      return { label: `Vencido (${Math.abs(diasRestantes)} d)`, color: 'error', bcolor: '#fef2f2', textColor: '#b91c1c', anim: true };
-    } else if (diasRestantes <= 2) {
-      return { label: `CRÍTICO (${diasRestantes} d)`, color: 'error', bcolor: '#fef2f2', textColor: '#b91c1c', anim: true };
-    } else if (diasRestantes <= 5) {
-      return { label: `Advertencia (${diasRestantes} d)`, color: 'warning', bcolor: '#fffbeb', textColor: '#b45309', anim: false };
-    } else {
-      return { label: `${diasRestantes} días libres`, color: 'success', bcolor: '#f0fdf4', textColor: '#15803d', anim: false };
     }
   };
 
@@ -157,40 +127,17 @@ export default function Casos({ onSelectCaso, userRole, currentUserEmail }) {
                 <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>No. Expediente</TableCell>
                 <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Nombre del Litigio</TableCell>
                 <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Materia Jurídica</TableCell>
-                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Estatus de Plazos (Fechas Fatales)</TableCell>
                 <TableCell sx={{ color: 'white', fontWeight: 'bold', textAlign: 'center' }}>Acciones</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {casos.map((caso) => {
-                const semaforo = calcularSemaforoDePlazos(caso.plazos);
                 return (
                   <TableRow key={caso.id} hover>
                     <TableCell sx={{ fontWeight: 'bold', color: '#1a365d' }}>{caso.numeroExpediente}</TableCell>
                     <TableCell sx={{ fontWeight: 'medium' }}>{caso.nombreCaso}</TableCell>
                     <TableCell>
                       <Chip label={caso.materia} size="small" sx={{ fontWeight: 'medium', bgcolor: '#f1f5f9' }} />
-                    </TableCell>
-                    <TableCell>
-                      <Box 
-                        sx={{ 
-                          display: 'inline-flex', 
-                          alignItems: 'center', 
-                          gap: 1,
-                          px: 1.5,
-                          py: 0.5,
-                          borderRadius: 2,
-                          bgcolor: semaforo.bcolor,
-                          border: `1px solid ${semaforo.color === 'default' ? '#e2e8f0' : 'transparent'}`,
-                          animation: semaforo.anim ? 'pulse 1.5s infinite alternate' : 'none',
-                          '@keyframes pulse': { '0%': { opacity: 0.6 }, '100%': { opacity: 1 } }
-                        }}
-                      >
-                        {semaforo.color === 'error' && <AlertTriangle size={14} color="#b91c1c" />}
-                        <Typography variant="caption" fontWeight="bold" color={semaforo.textColor}>
-                          {semaforo.label}
-                        </Typography>
-                      </Box>
                     </TableCell>
                     <TableCell sx={{ textAlign: 'center' }}>
                       <IconButton size="small" color="primary" title="Abrir Expediente" onClick={() => onSelectCaso(caso)}>

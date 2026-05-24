@@ -1,15 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../config/firebase';
 import { 
-  doc, 
-  updateDoc, 
-  arrayUnion, 
-  serverTimestamp, 
-  addDoc, 
   collection, 
   getDocs, 
-  query, 
-  orderBy 
+  addDoc 
 } from 'firebase/firestore';
 import { 
   Box, 
@@ -38,9 +32,6 @@ import {
 } from '@mui/material';
 import { 
   ArrowLeft, 
-  CalendarPlus, 
-  CheckCircle, 
-  Clock, 
   Users, 
   FileText, 
   Plus 
@@ -59,16 +50,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [notasCliente, setNotasCliente] = useState([]);
   const [docsCliente, setDocsCliente] = useState([]);
 
-  // ESTADOS MODALES: PESTAÑA 0 (PLAZOS)
-  const [openPlazoModal, setOpenPlazoModal] = useState(false);
-  const [descripcionPlazo, setDescripcionPlazo] = useState('');
-  const [fechaFatalInput, setFechaFatalInput] = useState('');
-  const [responsablePlazo, setResponsablePlazo] = useState('');
-  const [openCerrarModal, setOpenCerrarModal] = useState(false);
-  const [plazoAActivar, setPlazoAActivar] = useState(null);
-  const [folioAcuse, setFolioAcuse] = useState('');
-
-  // ESTADOS MODALES: PESTAÑA 1 (CLIENTES)
+  // ESTADOS MODALES: PESTAÑA 0 (CLIENTES)
   const [openClienteModal, setOpenClienteModal] = useState(false);
   const [nombreCliente, setNombreCliente] = useState('');
   const [identificacionCliente, setIdentificacionCliente] = useState('');
@@ -78,7 +60,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [nombreDocCliente, setNombreDocCliente] = useState('');
   const [urlDocCliente, setUrlDocCliente] = useState('');
 
-  // ESTADOS MODALES: PESTAÑA 2 (DOCS COMUNES)
+  // ESTADOS MODALES: PESTAÑA 1 (DOCS COMUNES)
   const [openDocComunModal, setOpenDocComunModal] = useState(false);
   const [nombreDocComun, setNombreDocComun] = useState('');
   const [urlDocComun, setUrlDocComun] = useState('');
@@ -123,84 +105,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   };
 
   // =====================================================================================
-  // MANEJADORES: CONTROL DE TÉRMINOS Y PLAZOS JURÍDICOS (PESTAÑA 0)
-  // =====================================================================================
-  const handleAgregarPlazo = async (e) => {
-    e.preventDefault();
-    if (!descripcionPlazo || !fechaFatalInput || !responsablePlazo) return;
-
-    setError('');
-    const nuevoPlazoObj = {
-      id: 'plazo_' + Date.now(),
-      descripcion: descripcionPlazo,
-      fechaFatal: fechaFatalInput,
-      responsable: responsablePlazo,
-      completado: false,
-      fechaPresentacion: '',
-      folioAcuse: ''
-    };
-
-    try {
-      const casoRef = doc(db, 'casos', instanciaCaso.id);
-      await updateDoc(casoRef, { plazos: arrayUnion(nuevoPlazoObj) });
-
-      await addDoc(collection(db, 'logs_auditoria'), {
-        usuario: currentUserEmail,
-        accion: 'AGREGAR_PLAZO_PROCESAL',
-        detalles: `Se fijó término fatal para ${fechaFatalInput} en Exp. ${instanciaCaso.numeroExpediente}`,
-        fecha: serverTimestamp()
-      });
-
-      const copiaPlazos = [...(instanciaCaso.plazos || []), nuevoPlazoObj];
-      setInstanciaCaso({ ...instanciaCaso, plazos: copiaPlazos });
-      setDescripcionPlazo('');
-      setFechaFatalInput('');
-      setResponsablePlazo('');
-      setOpenPlazoModal(false);
-    } catch (err) {
-      setError('No posee autorizaciones para inyectar plazos procesales.');
-    }
-  };
-
-  const handleConfirmarCierrePlazo = async (e) => {
-    e.preventDefault();
-    if (!plazoAActivar || !folioAcuse) return;
-
-    setError('');
-    try {
-      const casoRef = doc(db, 'casos', instanciaCaso.id);
-      const plazosModificados = (instanciaCaso.plazos || []).map(p => {
-        if (p.id === plazoAActivar.id) {
-          return {
-            ...p,
-            completado: true,
-            fechaPresentacion: new Date().toLocaleString(),
-            folioAcuse: folioAcuse
-          };
-        }
-        return p;
-      });
-
-      await updateDoc(casoRef, { plazos: plazosModificados });
-
-      await addDoc(collection(db, 'logs_auditoria'), {
-        usuario: currentUserEmail,
-        accion: 'DESACTIVAR_PLAZO_PROCESAL',
-        detalles: `Plazo cerrado en Exp. ${instanciaCaso.numeroExpediente}. Sello judicial Folio: ${folioAcuse}`,
-        fecha: serverTimestamp()
-      });
-
-      setInstanciaCaso({ ...instanciaCaso, plazos: plazosModificados });
-      setFolioAcuse('');
-      setPlazoAActivar(null);
-      setOpenCerrarModal(false);
-    } catch (err) {
-      setError('Error al salvaguardar la inmutabilidad del hito.');
-    }
-  };
-
-  // =====================================================================================
-  // MANEJADORES: EXPEDIENTE DE CLIENTELA INTERNA (PESTAÑA 1)
+  // MANEJADORES: EXPEDIENTE DE CLIENTELA INTERNA (PESTAÑA 0)
   // =====================================================================================
   const handleCrearCliente = async (e) => {
     e.preventDefault();
@@ -262,7 +167,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   };
 
   // =====================================================================================
-  // MANEJADORES: REPOSITORIO DIGITAL DE DOCUMENTOS COMUNES (PESTAÑA 2)
+  // MANEJADORES: REPOSITORIO DIGITAL DE DOCUMENTOS COMUNES (PESTAÑA 1)
   // =====================================================================================
   const handleAgregarDocComun = async (e) => {
     e.preventDefault();
@@ -283,20 +188,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     } catch (err) {
       setError('Error al anexar archivo al expediente común.');
     }
-  };
-
-  const calcularEstiloFilaPlazo = (plazo) => {
-    if (plazo.completado) return { colorChip: 'success', label: 'Presentado', bgFila: '#ffffff' };
-    const hoy = new Date();
-    hoy.setHours(0,0,0,0);
-    const fatal = new Date(plazo.fechaFatal + 'T00:00:00');
-    fatal.setHours(0,0,0,0);
-    const diff = Math.ceil((fatal.getTime() - hoy.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (diff < 0) return { colorChip: 'error', label: 'Vencido', bgFila: '#fef2f2' };
-    if (diff <= 2) return { colorChip: 'error', label: 'CRÍTICO', bgFila: '#fef2f2' };
-    if (diff <= 5) return { colorChip: 'warning', label: 'Advertencia', bgFila: '#fffbeb' };
-    return { colorChip: 'info', label: 'A tiempo', bgFila: '#ffffff' };
   };
 
   return (
@@ -346,82 +237,12 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         onChange={(e, newVal) => setActiveTab(newVal)} 
         sx={{ mb: 3, borderBottom: '1px solid #e2e8f0', '& .MuiTab-root': { textTransform: 'none', fontWeight: 'bold' } }}
       >
-        <Tab icon={<Clock size={16} />} iconPosition="start" label="Fechas Fatales y Plazos" />
         <Tab icon={<Users size={16} />} iconPosition="start" label="Clientes y Archivo Privado" />
         <Tab icon={<FileText size={16} />} iconPosition="start" label="Expediente Digital Común" />
       </Tabs>
 
-      {/* CONTENIDO: TAB 0 - CONTROL DE VENCIMIENTOS JUDICIALES */}
+      {/* CONTENIDO: TAB 0 - GESTIÓN DE CLIENTES, NOTAS INTERNAS Y DOCUMENTOS */}
       {activeTab === 0 && (
-        <Box>
-          <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="subtitle1" fontWeight="bold" color="#1a365d">
-              Vencimientos y Alertas de Término
-            </Typography>
-            <Button
-              variant="outlined"
-              startIcon={<CalendarPlus size={16} />}
-              onClick={() => setOpenPlazoModal(true)}
-              sx={{ color: '#1a365d', borderColor: '#1a365d', textTransform: 'none', fontWeight: 'bold', borderRadius: 2 }}
-            >
-              Cargar Fecha Fatal
-            </Button>
-          </Box>
-
-          {(!instanciaCaso.plazos || instanciaCaso.plazos.length === 0) ? (
-            <Alert severity="info">Este expediente no registra plazos procesales abiertos todavía.</Alert>
-          ) : (
-            <TableContainer component={Paper} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
-              <Table size="small">
-                <TableHead sx={{ bgcolor: '#f8fafc' }}>
-                  <TableRow>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Término Procesal</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Fecha Límite</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Responsable</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Estatus</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Evidencia / Sello Judicial</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold', textAlign: 'center' }}>Acción</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {instanciaCaso.plazos.map((plazo) => {
-                    const cfg = calcularEstiloFilaPlazo(plazo);
-                    return (
-                      <TableRow key={plazo.id} sx={{ bgcolor: cfg.bgFila }} hover>
-                        <TableCell sx={{ fontWeight: 'medium', py: 1.5 }}>{plazo.descripcion}</TableCell>
-                        <TableCell sx={{ fontWeight: 'bold', color: '#b91c1c' }}>{plazo.fechaFatal}</TableCell>
-                        <TableCell>{plazo.responsable}</TableCell>
-                        <TableCell><Chip label={cfg.label} color={cfg.colorChip} size="small" sx={{ fontWeight: 'bold' }} /></TableCell>
-                        <TableCell sx={{ fontSize: '0.8rem', color: 'text.secondary' }}>
-                          {plazo.completado ? `Folio: ${plazo.folioAcuse} (${plazo.fechaPresentacion})` : 'Exigible ante el tribunal'}
-                        </TableCell>
-                        <TableCell sx={{ textAlign: 'center' }}>
-                          {!plazo.completado ? (
-                            <Button 
-                              variant="contained" 
-                              color="success" 
-                              size="small" 
-                              onClick={() => { setPlazoAActivar(plazo); setOpenCerrarModal(true); }}
-                              sx={{ textTransform: 'none', fontWeight: 'bold', borderRadius: 1.5 }}
-                            >
-                              Cerrar
-                            </Button>
-                          ) : (
-                            <Chip label="Histórico" size="small" variant="outlined" disabled />
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </Box>
-      )}
-
-      {/* CONTENIDO: TAB 1 - GESTIÓN DE CLIENTES, NOTAS INTERNAS Y DOCUMENTOS */}
-      {activeTab === 1 && (
         <Box>
           <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="subtitle1" fontWeight="bold" color="#1a365d">Clientes Adscritos al Caso</Typography>
@@ -521,8 +342,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Box>
       )}
 
-      {/* CONTENIDO: TAB 2 - EXPEDIENTE DIGITAL COMÚN */}
-      {activeTab === 2 && (
+      {/* CONTENIDO: TAB 1 - EXPEDIENTE DIGITAL COMÚN */}
+      {activeTab === 1 && (
         <Box>
           <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="subtitle1" fontWeight="bold" color="#1a365d">Archivos y Actuaciones Comunes del Caso</Typography>
@@ -569,39 +390,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Box>
       )}
 
-      {/* SECCIÓN DE MODALES */}
+      {/* SECCIÓN DE MODALES REVISADOS */}
       
-      {/* MODAL: CARGAR PLAZO */}
-      <Dialog open={openPlazoModal} onClose={() => setOpenPlazoModal(false)} fullWidth maxWidth="xs">
-        <form onSubmit={handleAgregarPlazo}>
-          <DialogTitle sx={{ fontWeight: 'bold', color: '#1a365d' }}>Cargar Término Procesal</DialogTitle>
-          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
-            <TextField label="Descripción del Término (Ej: Recurso de Apelación)" fullWidth required value={descripcionPlazo} onChange={e => setDescripcionPlazo(e.target.value)} />
-            <TextField label="Fecha Límite Judicial (Fecha Fatal)" type="date" fullWidth required slotProps={{ inputLabel: { shrink: true } }} value={fechaFatalInput} onChange={e => setFechaFatalInput(e.target.value)} />
-            <TextField label="Abogado Litigante Responsable" fullWidth required value={responsablePlazo} onChange={e => setResponsablePlazo(e.target.value)} />
-          </DialogContent>
-          <DialogActions sx={{ p: 2, bgcolor: '#f8fafc' }}>
-            <Button onClick={() => setOpenPlazoModal(false)} color="inherit">Cancelar</Button>
-            <Button type="submit" variant="contained" sx={{ bgcolor: '#1a365d' }}>Cargar Término</Button>
-          </DialogActions>
-        </form>
-      </Dialog>
-
-      {/* MODAL: RESOLVER PLAZO */}
-      <Dialog open={openCerrarModal} onClose={() => setOpenCerrarModal(false)} fullWidth maxWidth="xs">
-        <form onSubmit={handleConfirmarCierrePlazo}>
-          <DialogTitle sx={{ fontWeight: 'bold', color: '#1a365d' }}>Desactivar Alerta Fatal</DialogTitle>
-          <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
-            <Typography variant="body2" color="text.secondary">Ingrese el identificador oficial del sello o acuse digital provisto por el juzgado.</Typography>
-            <TextField label="Número de Folio / Código de Barras del Acuse" fullWidth required value={folioAcuse} onChange={e => setFolioAcuse(e.target.value)} />
-          </DialogContent>
-          <DialogActions sx={{ p: 2, bgcolor: '#f8fafc' }}>
-            <Button onClick={() => setOpenCerrarModal(false)} color="inherit">Abortar</Button>
-            <Button type="submit" variant="contained" color="success">Registrar Presentación</Button>
-          </DialogActions>
-        </form>
-      </Dialog>
-
       {/* MODAL: REGISTRAR CLIENTE */}
       <Dialog open={openClienteModal} onClose={() => setOpenClienteModal(false)} fullWidth maxWidth="xs">
         <form onSubmit={handleCrearCliente}>
