@@ -145,10 +145,14 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [openPlazoModal, setOpenPlazoModal] = useState(false);
   const [descripcionPlazo, setDescripcionPlazo] = useState('');
   const [fechaFatalInput, setFechaFatalInput] = useState('');
-  const [responsablePlazo, setResponsablePlazo] = useState('');
+  const [responsablePlazo, setResponsiblePlazo] = useState('');
   const [openCerrarModal, setOpenCerrarModal] = useState(false);
   const [plazoAActivar, setPlazoAActivar] = useState(null);
-  const [folioAcuse, setFolioAcuse] = useState('');
+  
+  // Estados de carga para el documento probatorio del plazo
+  const [fileProbatorio, setFileProbatorio] = useState(null);
+  const [uploadingPlazoDoc, setUploadingPlazoDoc] = useState(false);
+  const [uploadProgressPlazoDoc, setUploadProgressPlazoDoc] = useState(0);
 
   const fetchClientes = async () => {
     setLoading(true);
@@ -309,7 +313,9 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       responsable: responsablePlazo.trim(),
       completado: false,
       fechaPresentacion: '',
-      folioAcuse: ''
+      documentoProbatorioNombre: '',
+      documentoProbatorioUrl: '',
+      storage_path: ''
     };
 
     try {
@@ -327,7 +333,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       setLocalPlazos(prev => [...prev, nuevoPlazoObj]);
       setDescripcionPlazo('');
       setFechaFatalInput('');
-      setResponsablePlazo('');
+      setResponsiblePlazo('');
       setOpenPlazoModal(false);
     } catch (err) {
       setError('No se pudo guardar el plazo procesal.');
@@ -336,39 +342,99 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
 
   const handleConfirmarCierrePlazo = async (e) => {
     e.preventDefault();
-    if (!plazoAActivar || !folioAcuse.trim()) return;
+    if (!plazoAActivar || !fileProbatorio) return;
 
+    setUploadingPlazoDoc(true);
+    setUploadProgressPlazoDoc(0);
     setError('');
-    try {
-      const plazosModificados = localPlazos.map(p => {
-        if (p.id === plazoAActivar.id) {
-          return {
-            ...p,
-            completado: true,
-            fechaPresentacion: new Date().toLocaleString(),
-            folioAcuse: folioAcuse.trim()
-          };
+
+    const storagePath = `casos/${caso.id}/documentos_comunes/${Date.now()}_${fileProbatorio.name}`;
+    const storageRef = ref(storage, storagePath);
+    const uploadTask = uploadBytesResumable(storageRef, fileProbatorio);
+
+    uploadTask.on('state_changed', 
+      (snap) => {
+        const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
+        setUploadProgressPlazoDoc(Math.round(progress));
+      },
+      (err) => { 
+        setError('Error al subir el documento probatorio.'); 
+        setUploadingPlazoDoc(false); 
+      },
+      async () => {
+        try {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+
+          // 1. Inyectar en Documentos Comunes automáticamente
+          await addDoc(collection(db, 'casos', caso.id, 'documentos_comunes'), {
+            nombre: fileProbatorio.name,
+            url: downloadURL,
+            storage_path: storagePath,
+            fecha_subida: new Date().toISOString()
+          });
+
+          // 2. Modificar el estatus del término procesal
+          const plazosModificados = localPlazos.map(p => {
+            if (p.id === plazoAActivar.id) {
+              return {
+                ...p,
+                completado: true,
+                fechaPresentacion: new Date().toLocaleString(),
+                documentoProbatorioNombre: fileProbatorio.name,
+                documentoProbatorioUrl: downloadURL,
+                storage_path: storagePath
+              };
+            }
+            return p;
+          });
+
+          const casoDocRef = doc(db, 'casos', caso.id);
+          await updateDoc(casoDocRef, { plazos: plazosModificados });
+
+          await registrarLogAuditoria(
+            currentUserEmail,
+            'Resolución de Plazo',
+            `Se solventó plazo ID: ${plazoAActivar.id} subiendo documento probatorio: "${fileProbatorio.name}"`
+          );
+
+          setLocalPlazos(plazosModificados);
+          setFileProbatorio(null);
+          setPlazoAActivar(null);
+          setOpenCerrarModal(false);
+          fetchDocsComunes(); 
+        } catch (ex) {
+          setError('Error al resguardar la inmutabilidad del hito.');
+        } finally {
+          setUploadingPlazoDoc(false);
         }
-        return p;
-      });
-
-      const casoDocRef = doc(db, 'casos', caso.id);
-      await updateDoc(casoDocRef, { plazos: plazosModificados });
-
-      await registrarLogAuditoria(
-        currentUserEmail,
-        'Resolución de Plazo',
-        `Se completó el plazo ID: ${plazoAActivar.id} con folio judicial: ${folioAcuse.trim()}`
-      );
-
-      setLocalPlazos(plazosModificados);
-      setFolioAcuse('');
-      setPlazoAActivar(null);
-      setOpenCerrarModal(false);
-    } catch (err) {
-      setError('Error al cerrar el hito procesal.');
-    }
+      }
+    );
   };
+
+  // =====================================================================================
+  // MOTOR DEL SEMÁFORO INTERNO: Sincroniza el estatus dinámico de las pestañas
+  // =====================================================================================
+  const semaforoGeneral = (() => {
+    const plazosActivos = localPlazos.filter(p => !p.completado);
+    if (plazosActivos.length === 0) return null;
+
+    const fechasEnMilisegundos = plazosActivos.map(p => new Date(p.fechaFatal + 'T00:00:00').getTime());
+    const fechaMasProximaMs = Math.min(...fechasEnMilisegundos);
+    
+    const hoy = new Date();
+    hoy.setHours(0,0,0,0);
+    
+    const fechaFatal = new Date(fechaMasProximaMs);
+    fechaFatal.setHours(0,0,0,0);
+
+    const diferenciaTiempo = fechaFatal.getTime() - hoy.getTime();
+    const diasRestantes = Math.ceil(diferenciaTiempo / (1000 * 60 * 60 * 24));
+
+    if (diasRestantes < 0) return { label: `Vencido (${Math.abs(diasRestantes)} d)`, color: '#b91c1c' };
+    if (diasRestantes <= 2) return { label: `URGENTE (${diasRestantes} d)`, color: '#b91c1c' };
+    if (diasRestantes <= 5) return { label: `Advertencia (${diasRestantes} d)`, color: '#b45309' };
+    return { label: `${diasRestantes} días libres`, color: '#15803d' };
+  })();
 
   if (clienteSeleccionadoId) {
     return (
@@ -405,7 +471,17 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           <Tab icon={<Users size={18} />} iconPosition="start" label="Fichas de Clientes" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
           <Tab icon={<FileText size={18} />} iconPosition="start" label="Documentos Comunes" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
           <Tab icon={<CreditCard size={18} />} iconPosition="start" label="Control de Pagos" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
-          <Tab icon={<Clock size={18} />} iconPosition="start" label="Control de Vencimientos" sx={{ textTransform: 'none', fontWeight: 'bold' }} />
+          {/* COLORACIÓN DINÁMICA: Aplica estilos según criticidad en la pestaña */}
+          <Tab 
+            icon={<Clock size={18} style={{ color: semaforoGeneral ? semaforoGeneral.color : 'inherit' }} />} 
+            iconPosition="start" 
+            label={semaforoGeneral ? `Control de Vencimientos (${semaforoGeneral.label})` : "Control de Vencimientos"} 
+            style={{ 
+              textTransform: 'none', 
+              fontWeight: 'bold', 
+              color: semaforoGeneral ? semaforoGeneral.color : 'inherit' 
+            }} 
+          />
         </Tabs>
       </Box>
 
@@ -584,7 +660,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                     <TableCell sx={{ fontWeight: 'bold' }}>Fecha Límite</TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>Responsable</TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>Estatus</TableCell>
-                    <TableCell sx={{ fontWeight: 'bold' }}>Evidencia / Sello Judicial</TableCell>
+                    {/* COLUMNA ACTUALIZADA BAJO CRITERIOS INTERNACIONALES */}
+                    <TableCell sx={{ fontWeight: 'bold' }}>Documento Probatorio</TableCell>
                     <TableCell sx={{ fontWeight: 'bold', textAlign: 'center' }}>Acción</TableCell>
                   </TableRow>
                 </TableHead>
@@ -610,8 +687,26 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                         <TableCell sx={{ fontWeight: 'bold', color: '#b91c1c' }}>{plazo.fechaFatal}</TableCell>
                         <TableCell>{plazo.responsable}</TableCell>
                         <TableCell><Chip label={cfg.label} color={cfg.colorChip} size="small" sx={{ fontWeight: 'bold' }} /></TableCell>
-                        <TableCell sx={{ fontSize: '0.8rem', color: 'text.secondary' }}>
-                          {plazo.completado ? `Folio: ${plazo.folioAcuse} (${plazo.fechaPresentacion})` : 'Exigible ante el tribunal'}
+                        {/* ENLACE DIRECTO AL ARCHIVO EN STORAGE */}
+                        <TableCell sx={{ fontSize: '0.8rem' }}>
+                          {plazo.completado ? (
+                            <Button
+                              component="a"
+                              href={plazo.documentoProbatorioUrl}
+                              target="_blank"
+                              rel="noopener"
+                              variant="text"
+                              size="small"
+                              startIcon={<File size={14} />}
+                              sx={{ textTransform: 'none', p: 0, fontWeight: 'bold', justifyContent: 'flex-start' }}
+                            >
+                              {plazo.documentoProbatorioNombre || 'Ver Archivo'}
+                            </Button>
+                          ) : (
+                            <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
+                              Exigible ante la instancia
+                            </Typography>
+                          )}
                         </TableCell>
                         <TableCell sx={{ textAlign: 'center' }}>
                           {!plazo.completado ? (
@@ -706,7 +801,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <TextField label="Descripción del Término (Ej: Recurso de Apelación)" fullWidth required value={descripcionPlazo} onChange={e => setDescripcionPlazo(e.target.value)} />
             <TextField label="Fecha Límite Judicial (Fecha Fatal)" type="date" fullWidth required slotProps={{ inputLabel: { shrink: true } }} value={fechaFatalInput} onChange={e => setFechaFatalInput(e.target.value)} />
-            <TextField label="Abogado Litigante Responsable" fullWidth required value={responsablePlazo} onChange={e => setResponsablePlazo(e.target.value)} />
+            <TextField label="Abogado Litigante Responsable" fullWidth required value={responsablePlazo} onChange={e => setResponsiblePlazo(e.target.value)} />
           </DialogContent>
           <DialogActions sx={{ p: 2.5 }}>
             <Button onClick={() => setOpenPlazoModal(false)} color="inherit" sx={{ textTransform: 'none' }}>Cancelar</Button>
@@ -715,17 +810,47 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         </Box>
       </Dialog>
 
-      {/* MODAL: RESOLVER PLAZO */}
-      <Dialog open={openCerrarModal} onClose={() => setOpenCerrarModal(false)} fullWidth maxWidth="xs" slotProps={{ paper: { sx: { borderRadius: 3 } } }}>
+      {/* MODAL: RESOLVER PLAZO CON ARCHIVO PROBATORIO OBLIGATORIO */}
+      <Dialog 
+        open={openCerrarModal} 
+        onClose={() => { if (!uploadingPlazoDoc) { setOpenCerrarModal(false); setFileProbatorio(null); } }} 
+        fullWidth 
+        maxWidth="xs" 
+        slotProps={{ paper: { sx: { borderRadius: 3 } } }}
+      >
         <Box component="form" onSubmit={handleConfirmarCierrePlazo}>
-          <DialogTitle fontWeight="bold">Desactivar Alerta Fatal</DialogTitle>
+          <DialogTitle fontWeight="bold">Subsanar y Cargar Documento Probatorio</DialogTitle>
           <DialogContent dividers sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Typography variant="body2" color="text.secondary">Ingrese el identificador oficial del sello o acuse digital provisto por el juzgado.</Typography>
-            <TextField label="Número de Folio / Código de Barras del Acuse" fullWidth required value={folioAcuse} onChange={e => setFolioAcuse(e.target.value)} />
+            <Typography variant="body2" color="text.secondary">
+              Para dar por solventado este plazo ante instancias internacionales, debe anexar obligatoriamente el documento sustentatorio en formato digital.
+            </Typography>
+            
+            <Button 
+              variant="outlined" 
+              component="label" 
+              startIcon={<Upload size={18} />} 
+              disabled={uploadingPlazoDoc} 
+              fullWidth
+              sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold', py: 1.5 }}
+            >
+              {fileProbatorio ? fileProbatorio.name : 'Seleccionar Documento Probatorio'}
+              <input type="file" accept="application/pdf,image/*" hidden required onChange={(e) => setFileProbatorio(e.target.files[0])} />
+            </Button>
+
+            {uploadingPlazoDoc && (
+              <Box sx={{ width: '100%', mt: 1 }}>
+                <LinearProgress variant="determinate" value={uploadProgressPlazoDoc} />
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 0.5 }}>
+                  Subiendo archivo... {uploadProgressPlazoDoc}%
+                </Typography>
+              </Box>
+            )}
           </DialogContent>
           <DialogActions sx={{ p: 2.5 }}>
-            <Button onClick={() => setOpenCerrarModal(false)} color="inherit" sx={{ textTransform: 'none' }}>Abortar</Button>
-            <Button type="submit" variant="contained" color="success" sx={{ textTransform: 'none', fontWeight: 'bold' }}>Registrar Presentación</Button>
+            <Button onClick={() => { setOpenCerrarModal(false); setFileProbatorio(null); }} color="inherit" sx={{ textTransform: 'none' }} disabled={uploadingPlazoDoc}>Abortar</Button>
+            <Button type="submit" variant="contained" color="success" sx={{ textTransform: 'none', fontWeight: 'bold' }} disabled={uploadingPlazoDoc || !fileProbatorio}>
+              {uploadingPlazoDoc ? 'Procesando...' : 'Registrar Presentación'}
+            </Button>
           </DialogActions>
         </Box>
       </Dialog>
