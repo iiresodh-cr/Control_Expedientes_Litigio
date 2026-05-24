@@ -49,7 +49,11 @@ import {
   Upload, 
   File, 
   Plus, 
-  Trash2 
+  Trash2,
+  Eye,
+  CheckCircle,
+  AlertTriangle,
+  Mail
 } from 'lucide-react';
 import { registrarLogAuditoria } from '../utils/auditLogger';
 
@@ -114,6 +118,10 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
+  // NUEVOS ESTADOS: Control de telemetría de mensajería masiva / selectiva
+  const [historialComunicados, setHistorialComunicados] = useState([]);
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
+
   const clienteRef = doc(db, 'casos', casoId, 'clientes', clienteId);
 
   const cargarDatosExpediente = async () => {
@@ -131,6 +139,7 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
         setDireccion(data.direccion || '');
         setCorreoPrincipal(data.correo_principal || data.correo || ''); 
         setCorreoSecundario(data.correo_secundario || '');
+        // Ajuste preventivo para conservar fallback original
         setCodigoTelefonoPrincipal(data.codigo_telefono_principal || data.codigo_telefono || '+506');
         setTelefonoPrincipal(data.telefono_principal || data.telefono || '');
         setCodigoTelefonoSecundario(data.codigo_telefono_secundario || '+506'); 
@@ -142,6 +151,34 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
 
       const snapshotDocs = await getDocs(query(collection(db, 'casos', casoId, 'clientes', clienteId, 'documentos'), orderBy('fecha_subida', 'desc')));
       setDocumentos(snapshotDocs.docs.map(d => ({ id: d.id, ...d.data() })));
+
+      // INTEGRACIÓN: Carga asíncrona de los eventos de SendGrid asociados a este representado
+      setLoadingHistorial(true);
+      try {
+        const historialRef = collection(db, 'casos', casoId, 'clientes', clienteId, 'historial_comunicados');
+        const snapHistorial = await getDocs(historialRef);
+        
+        const listaEventos = [];
+        for (const hDoc of snapHistorial.docs) {
+          const datosEvento = hDoc.data();
+          
+          // Resolución cruzada del asunto original desde el documento global de comunicados del caso
+          const comGlobalRef = doc(db, 'casos', casoId, 'comunicados', hDoc.id);
+          const snapCom = await getDoc(comGlobalRef);
+          
+          listaEventos.push({
+            id: hDoc.id,
+            asunto: snapCom.exists() ? snapCom.data().asunto : 'Comunicado del Sistema',
+            ...datosEvento
+          });
+        }
+        setHistorialComunicados(listaEventos);
+      } catch (errHist) {
+        console.error("Error al compilar historial de notificaciones:", errHist);
+      } finally {
+        setLoadingHistorial(false);
+      }
+
     } catch (err) { 
       setError('Error al compilar el expediente.'); 
     } finally { 
@@ -457,6 +494,61 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
               ))}
             </List>
           </Paper>
+
+          {/* INTEGRACIÓN EXCLUSIVA: Historial y Telemetría Atómica de Notificaciones de SendGrid */}
+          <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, color: 'primary.main' }}>
+              <Mail size={20} />
+              <Typography variant="h6" fontWeight="bold">Historial de Notificaciones</Typography>
+            </Box>
+            
+            {loadingHistorial ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}><CircularProgress size={24} /></Box>
+            ) : historialComunicados.length === 0 ? (
+              <Typography variant="body2" color="text.disabled">No se registran notificaciones para este representado.</Typography>
+            ) : (
+              <List sx={{ maxHeight: 280, overflow: 'auto', p: 0 }}>
+                {historialComunicados.map((item) => {
+                  const cfg = (() => {
+                    if (item.estado === 'Abierto') return { color: 'success', icon: <Eye size={14} />, label: 'Abierto' };
+                    if (item.estado === 'Entregado') return { color: 'info', icon: <CheckCircle size={14} />, label: 'Entregado' };
+                    if (item.estado === 'Rebotado') return { color: 'error', icon: <AlertTriangle size={14} />, label: 'Rebotado' };
+                    return { color: 'default', icon: <Mail size={14} />, label: 'Enviado' };
+                  })();
+
+                  return (
+                    <Box key={item.id} sx={{ mb: 1.5, p: 1.5, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                        <Typography variant="body2" fontWeight="bold" sx={{ maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
+                          {item.asunto}
+                        </Typography>
+                        <Chip size="small" color={cfg.color} label={cfg.label} sx={{ fontWeight: 'bold', fontSize: '0.7rem', height: 20 }} />
+                      </Box>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 1 }}>
+                        {item.entregado_at && (
+                          <Typography variant="caption" color="text.secondary">
+                            Recibido: <strong>{item.entregado_at}</strong>
+                          </Typography>
+                        )}
+                        {item.abierto_at && (
+                          <Typography variant="caption" color="success.main">
+                            Abierto: <strong>{item.abierto_at}</strong>
+                          </Typography>
+                        )}
+                        {item.rebotado_at && (
+                          <Typography variant="caption" color="error.main">
+                            Rebote: <strong>{item.rebotado_at}</strong>
+                            {item.causa_rebote && <span style={{ display: 'block', fontStyle: 'italic', fontSize: '0.65rem', marginTop: '2px' }}>{item.causa_rebote}</span>}
+                          </Typography>
+                        )}
+                      </Box>
+                    </Box>
+                  );
+                })}
+              </List>
+            )}
+          </Paper>
+
         </Box>
       </Box>
     </Box>
