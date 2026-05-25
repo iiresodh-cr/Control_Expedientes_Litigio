@@ -2,15 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { db, storage } from '../config/firebase';
 import { 
   doc, 
-  getDoc, 
   updateDoc, 
   collection, 
   addDoc, 
-  getDocs, 
   query, 
   orderBy, 
   serverTimestamp, 
-  deleteDoc 
+  deleteDoc,
+  onSnapshot 
 } from 'firebase/firestore';
 import { 
   ref, 
@@ -118,18 +117,23 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  // Control de telemetría de mensajería masiva / selectiva
+  // Estados reactivos en tiempo real para telemetría
   const [historialComunicados, setHistorialComunicados] = useState([]);
   const [loadingHistorial, setLoadingHistorial] = useState(false);
 
   const clienteRef = doc(db, 'casos', casoId, 'clientes', clienteId);
 
-  const cargarDatosExpediente = async () => {
+  // =====================================================================================
+  // BLINDAJE EN TIEMPO REAL NATIVO: Transforma capturas estáticas a escuchadores onSnapshot
+  // =====================================================================================
+  useEffect(() => {
     setLoading(true);
-    try {
-      const clienteSnap = await getDoc(clienteRef);
-      if (clienteSnap.exists()) {
-        const data = clienteSnap.data();
+    setError('');
+
+    // 1. Escuchador Live para los datos demográficos y de contacto de la Ficha
+    const unsubCliente = onSnapshot(clienteRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
         setCliente(data); 
         setNombres(data.nombres || ''); 
         setApellidos(data.apellidos || '');
@@ -143,76 +147,65 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
         setTelefonoPrincipal(data.telefono_principal || data.telefono || '');
         setCodigoTelefonoSecundario(data.codigo_telefono_secundario || '+506'); 
         setTelefonoSecundario(data.telefono_secundario || '');
+      } else {
+        setError('No se localizó la ficha del representado solicitado.');
       }
-      
-      const snapshotNotas = await getDocs(query(collection(db, 'casos', casoId, 'clientes', clienteId, 'notas'), orderBy('fecha', 'desc')));
-      setNotas(snapshotNotas.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoading(false);
+    }, (err) => {
+      setError('Error al sincronizar el expediente con el servidor.');
+      setLoading(false);
+    });
 
-      const snapshotDocs = await getDocs(query(collection(db, 'casos', casoId, 'clientes', clienteId, 'documentos'), orderBy('fecha_subida', 'desc')));
-      setDocumentos(snapshotDocs.docs.map(d => ({ id: d.id, ...d.data() })));
+    // 2. Escuchador Live para la Bitácora de Notas Jurídicas
+    const qNotas = query(collection(db, 'casos', casoId, 'clientes', clienteId, 'notas'), orderBy('fecha', 'desc'));
+    const unsubNotas = onSnapshot(qNotas, (snap) => {
+      setNotas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
 
-      // Carga asíncrona de los eventos de SendGrid asociados a este representado
-      setLoadingHistorial(true);
-      try {
-        const historialRef = collection(db, 'casos', casoId, 'clientes', clienteId, 'historial_comunicados');
-        const snapHistorial = await getDocs(historialRef);
-        
-        const listaEventos = [];
-        for (const hDoc of snapHistorial.docs) {
-          const datosEvento = hDoc.data();
-          
-          const comGlobalRef = doc(db, 'casos', casoId, 'comunicados', hDoc.id);
-          const snapCom = await getDoc(comGlobalRef);
-          
-          listaEventos.push({
-            id: hDoc.id,
-            asunto: snapCom.exists() ? snapCom.data().asunto : 'Comunicado del Sistema',
-            ...datosEvento
-          });
-        }
+    // 3. Escuchador Live para la Carga Inmutable de Documentos y Poderes
+    const qDocs = query(collection(db, 'casos', casoId, 'clientes', clienteId, 'documentos'), orderBy('fecha_subida', 'desc'));
+    const unsubDocs = onSnapshot(qDocs, (snap) => {
+      setDocumentos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
 
-        // FUNCIÓN AUXILIAR COGNITIVA: Revierte la cadena regional de Costa Rica a milisegundos puros
-        const parseFechaCRAMilisegundos = (str) => {
-          if (!str) return 0;
-          try {
-            const partes = str.split(/[\s,]+/);
-            const fechaPartes = partes[0].split('/');
-            const horaPartes = partes[1].split(':');
-            const dia = parseInt(fechaPartes[0], 10);
-            const mes = parseInt(fechaPartes[1], 10) - 1;
-            const anio = parseInt(fechaPartes[2], 10);
-            const hora = parseInt(horaPartes[0], 10);
-            const mi = parseInt(horaPartes[1], 10);
-            const se = parseInt(horaPartes[2], 10);
-            return new Date(anio, mes, dia, hora, mi, se).getTime();
-          } catch (e) {
-            return 0;
-          }
-        };
+    // 4. Escuchador Live para la subcolección autónoma con los DATOS COMPLETOS del comunicado
+    setLoadingHistorial(true);
+    const historialRef = collection(db, 'casos', casoId, 'clientes', clienteId, 'historial_comunicados');
+    const unsubHistorial = onSnapshot(historialRef, (snapHistorial) => {
+      const listaEventos = snapHistorial.docs.map(d => ({ id: d.id, ...d.data() }));
 
-        // AJUSTE CRONOLÓGICO SOLICITADO: Ordenamiento descendente (de más nuevo a más viejo)
-        listaEventos.sort((a, b) => {
-          const tiempoA = parseFechaCRAMilisegundos(a.ultima_actualizacion);
-          const tiempoB = parseFechaCRAMilisegundos(b.ultima_actualizacion);
-          return tiempoB - tiempoA;
-        });
+      const parseFechaCRAMilisegundos = (str) => {
+        if (!str) return 0;
+        try {
+          const partes = str.split(/[\s,]+/);
+          const fechaPartes = partes[0].split('/');
+          const horaPartes = partes[1].split(':');
+          const dia = parseInt(fechaPartes[0], 10);
+          const mes = parseInt(fechaPartes[1], 10) - 1;
+          const anio = parseInt(fechaPartes[2], 10);
+          const hora = parseInt(horaPartes[0], 10);
+          const mi = parseInt(horaPartes[1], 10);
+          const se = parseInt(horaPartes[2], 10);
+          return new Date(anio, mes, dia, hora, mi, se).getTime();
+        } catch (e) { return 0; }
+      };
 
-        setHistorialComunicados(listaEventos);
-      } catch (errHist) {
-        console.error("Error al compilar historial de comunicados:", errHist);
-      } fillado: {
-        setLoadingHistorial(false);
-      }
+      // Ordenar de más nuevo a más viejo
+      listaEventos.sort((a, b) => parseFechaCRAMilisegundos(b.ultima_actualizacion) - parseFechaCRAMilisegundos(a.ultima_actualizacion));
+      setHistorialComunicados(listaEventos);
+      setLoadingHistorial(false);
+    }, (errHist) => {
+      console.error("Error en sincronización de telemetría:", errHist);
+      setLoadingHistorial(false);
+    });
 
-    } catch (err) { 
-      setError('Error al compilar el expediente.'); 
-    } finally { 
-      setLoading(false); 
-    }
-  };
-
-  useEffect(() => { 
-    cargarDatosExpediente(); 
+    // Desuscripción limpia de sockets al desmontar el componente (Previene fugas de memoria)
+    return () => {
+      unsubCliente();
+      unsubNotas();
+      unsubDocs();
+      unsubHistorial();
+    };
   }, [casoId, clienteId]);
 
   const handleUpdateDatos = async (e) => {
@@ -263,8 +256,6 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
       );
 
       setNuevaNota('');
-      const snap = await getDocs(query(refNotas, orderBy('fecha', 'desc')));
-      setNotas(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (err) { 
       setError('Error al registrar la nota.'); 
     }
@@ -309,8 +300,6 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
 
         setUploading(false); 
         setSuccess('Archivo enlazado con éxito.');
-        const snap = await getDocs(query(refDocs, orderBy('fecha_subida', 'desc')));
-        setDocumentos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       }
     );
   };
@@ -330,9 +319,6 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
       );
 
       setSuccess('Documento removido correctamente.');
-      const refDocs = collection(db, 'casos', casoId, 'clientes', clienteId, 'documentos');
-      const snap = await getDocs(query(refDocs, orderBy('fecha_subida', 'desc')));
-      setDocumentos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (err) { 
       setError('Error al eliminar archivo.'); 
     }
@@ -438,7 +424,7 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
           <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, color: 'primary.main' }}>
               <StickyNote size={20} />
-              <Typography variant="h6" fontWeight="bold">Notas del Caso</Typography>
+              <Typography variant="h6" fontWeight="bold">Notas del Caso e Historial Jurídico</Typography>
             </Box>
             
             <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
@@ -520,10 +506,11 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
             </List>
           </Paper>
 
+          {/* VISTA DEL HISTORIAL: Renderiza de forma 100% autónoma los datos íntegros del comunicado */}
           <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, color: 'primary.main' }}>
               <Mail size={20} />
-              <Typography variant="h6" fontWeight="bold">Historial de Comunicados</Typography>
+              <Typography variant="h6" fontWeight="bold">Historial de Notificaciones</Typography>
             </Box>
             
             {loadingHistorial ? (
@@ -531,7 +518,7 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
             ) : historialComunicados.length === 0 ? (
               <Typography variant="body2" color="text.disabled">No se registran notificaciones para este representado.</Typography>
             ) : (
-              <List sx={{ maxHeight: 280, overflow: 'auto', p: 0 }}>
+              <List sx={{ maxHeight: 380, overflow: 'auto', p: 0 }}>
                 {historialComunicados.map((item) => {
                   const cfg = (() => {
                     if (item.estado === 'Abierto') return { color: 'success', icon: <Eye size={14} />, label: 'Abierto' };
@@ -541,14 +528,38 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
                   })();
 
                   return (
-                    <Box key={item.id} sx={{ mb: 1.5, p: 1.5, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
+                    <Box key={item.id} sx={{ mb: 2, p: 2, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                        <Typography variant="body2" fontWeight="bold" sx={{ maxWidth: '70%', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>
+                        <Typography variant="body2" fontWeight="bold" color="text.primary" sx={{ maxWidth: '70%' }}>
                           {item.asunto}
                         </Typography>
                         <Chip size="small" color={cfg.color} label={cfg.label} sx={{ fontWeight: 'bold', fontSize: '0.7rem', height: 20 }} />
                       </Box>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 1 }}>
+                      
+                      {/* CUERPO DEL CORREO INDEPENDIENTE Y COMPLETO */}
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', my: 1, whiteSpace: 'pre-wrap', bgcolor: '#ffffff', p: 1, borderRadius: 1, border: '1px solid #e2e8f0' }}>
+                        {item.cuerpo}
+                      </Typography>
+
+                      {/* ENLACE AL ANEXO PDF DE MANERA EXPLICITA Y PERMANENTE */}
+                      {item.pdf_url && (
+                        <Button
+                          component="a"
+                          href={item.pdf_url}
+                          target="_blank"
+                          rel="noopener"
+                          variant="text"
+                          size="small"
+                          startIcon={<File size={12} />}
+                          sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.7rem', p: 0, mt: 0.5, justifyContent: 'flex-start' }}
+                        >
+                          Descargar Anexo: {item.pdf_nombre || 'Documento Adjunto'}
+                        </Button>
+                      )}
+
+                      <Divider sx={{ my: 1, borderStyle: 'dashed' }} />
+
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                         {item.entregado_at && (
                           <Typography variant="caption" color="text.secondary">
                             Recibido: <strong>{item.entregado_at}</strong>

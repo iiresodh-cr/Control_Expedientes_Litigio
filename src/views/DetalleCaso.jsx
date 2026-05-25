@@ -394,7 +394,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     }
   };
 
-  const handleAgregarPlazo = async (e) => {
+  const handleBoxAgregarPlazo = async (e) => {
     e.preventDefault();
     if (!descripcionPlazo.trim() || !fechaFatalInput) return;
 
@@ -509,7 +509,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   };
 
   // =====================================================================================
-  // MANEJADOR CORRECTIVO: Adjunto Opcional + Telemetría Atómica Vía X-SMTPAPI en Raíz
+  // MANEJADOR CORRECTIVO: Copia Íntegra de Datos por Representado (NoSQL Desnormalizado)
   // =====================================================================================
   const handleCreateComunicado = async (e) => {
     e.preventDefault();
@@ -536,7 +536,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       return;
     }
 
-    // Pre-generamos el ID del documento para pasárselo de manera segura y transparente a SendGrid
     const comunicadoCollectionRef = collection(db, 'casos', caso.id, 'comunicados');
     const nuevoComunicadoDoc = doc(comunicadoCollectionRef);
     const comunicadoId = nuevoComunicadoDoc.id;
@@ -553,7 +552,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
               cuerpo: cuerpoComunicado.trim()
             }
           },
-          // CORRECCIÓN CARDINAL: La extensión lee los encabezados si están en la RAÍZ del documento
           headers: {
             "X-SMTPAPI": JSON.stringify({
               unique_args: {
@@ -575,17 +573,28 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           modeloDocumentoMail.pdf_url = pdfUrl;
           modeloDocumentoMail.storage_path = storagePath;
           modeloDocumentoMail.message = {
-            attachments: [
-              {
-                filename: pdfNombre,
-                path: pdfUrl
-              }
-            ]
+            attachments: [{ filename: pdfNombre, path: pdfUrl }]
           };
         }
 
-        // Escritura síncrona/atómica usando setDoc con el ID pre-calculado
+        // 1. Escritura del documento maestro global para la extensión SMTP
         await setDoc(nuevoComunicadoDoc, modeloDocumentoMail);
+
+        // 2. DUPLICACIÓN EN CASCADA: Inyectar datos completos directamente en cada representado
+        const fechaCR = new Date().toLocaleString('es-CR', { timeZone: 'America/Costa_Rica' });
+        for (const clienteItem of poolClientesAEnviar) {
+          const historialRef = doc(db, 'casos', caso.id, 'clientes', clienteItem.id, 'historial_comunicados', comunicadoId);
+          await setDoc(historialRef, {
+            comunicadoId: comunicadoId,
+            asunto: asuntoComunicado.trim(),
+            cuerpo: cuerpoComunicado.trim(),
+            pdf_nombre: pdfNombre,
+            pdf_url: pdfUrl,
+            storage_path: storagePath,
+            estado: 'Enviado',
+            ultima_actualizacion: fechaCR
+          });
+        }
 
         await registrarLogAuditoria(
           currentUserEmail,
@@ -1193,7 +1202,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         slotProps={{ 
           paper: { 
             component: 'form',
-            onSubmit: handleAgregarPlazo,
+            onSubmit: handleBoxAgregarPlazo,
             sx: { borderRadius: 3 } 
           } 
         }}
@@ -1405,12 +1414,12 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
             sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold', py: 1.5 }}
           >
             {fileComunicado ? fileComunicado.name : 'Adjuntar Documento del Comunicado (PDF) - Opcional'}
-            <input type="file" accept="application/pdf" hidden required={false} onChange={(e) => setFileComunicado(e.target.files[0])} />
+            <input type="file" accept="application/pdf" hidden onChange={(e) => setFileComunicado(e.target.files[0])} />
           </Button>
 
           {uploadingComunicado && (
             <Box sx={{ width: '100%', mt: 1 }}>
-              <LinearProgress variant="determinate" value={uploadProgressComunicado} />
+              <LinearProgress variant="determinate" value={uploadProgressCommunicado} />
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 0.5 }}>
                 Subiendo circular... {uploadProgressComunicado}%
               </Typography>
