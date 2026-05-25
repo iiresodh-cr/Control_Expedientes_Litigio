@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../config/firebase';
+import { db } from '../../config/firebase';
 import { 
   collection, addDoc, getDocs, query, orderBy, 
   serverTimestamp, getCountFromServer, doc, updateDoc, deleteDoc 
@@ -11,7 +11,7 @@ import {
   InputLabel, Select, MenuItem
 } from '@mui/material';
 import { Plus, Gavel, Calendar, Users, Edit, Trash2, AlertTriangle } from 'lucide-react';
-import { registrarLogAuditoria } from '../utils/auditLogger';
+import { registrarLogAuditoria } from '../../utils/auditLogger';
 
 const ESTADOS_CASO = ['Activo', 'Suspendido', 'Cerrado', 'Archivado'];
 
