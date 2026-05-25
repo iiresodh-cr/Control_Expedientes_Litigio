@@ -23,22 +23,34 @@ exports.webhookSendGrid = functions.https.onRequest(async (req, res) => {
       
       const smtpId = evento['smtp-id'];
       
-      // Extraer el token raíz de SendGrid eliminando los subprocesos después del punto
       let sgToken = null;
       if (evento.sg_message_id) {
         sgToken = evento.sg_message_id.split('.')[0];
       }
 
       if (!email || (!smtpId && !sgToken)) {
-        console.warn('⚠️ Saltando evento debido a falta de identificadores válidos.');
         continue;
+      }
+
+      // 🛡️ FILTRO 1: Ignorar aperturas automáticas de Apple Mail Privacy Protection
+      if (tipoEvento === 'open' && evento.apple_privacy_open === true) {
+        console.log(`🤖 Bot de Apple MPP detectado para ${email}. Ignorando falso positivo de apertura.`);
+        continue;
+      }
+
+      // 🛡️ FILTRO 2: Ignorar escáneres de seguridad corporativos comunes por User-Agent
+      if (tipoEvento === 'open' && evento.useragent) {
+        const ua = evento.useragent.toLowerCase();
+        if (ua.includes('bot') || ua.includes('spider') || ua.includes('crawl') || ua.includes('scanner') || ua.includes('cloudflarestub')) {
+          console.log(`🤖 Escáner de seguridad detectado por User-Agent: ${evento.useragent}. Ignorando apertura falsa.`);
+          continue;
+        }
       }
 
       let comunicadoDoc = null;
 
-      // ESTRATEGIA DE DOBLE ENLACE JURÍDICO
+      // Localizar el comunicado maestro
       if (smtpId) {
-        // Ruta A: Buscar por el ID universal del encabezado SMTP
         const querySnap = await db.collectionGroup('comunicados')
           .where('delivery.info.messageId', '==', smtpId)
           .limit(1)
@@ -46,7 +58,6 @@ exports.webhookSendGrid = functions.https.onRequest(async (req, res) => {
         
         if (!querySnap.empty) {
           comunicadoDoc = querySnap.docs[0];
-          // Guardar el token de SendGrid en el documento principal para futuros eventos de apertura
           if (sgToken) {
             await comunicadoDoc.ref.update({ sg_token: sgToken });
           }
@@ -54,7 +65,6 @@ exports.webhookSendGrid = functions.https.onRequest(async (req, res) => {
       } 
       
       if (!comunicadoDoc && sgToken) {
-        // Ruta B (Fallback para aperturas): Buscar por el token de tracking previamente guardado
         const querySnap = await db.collectionGroup('comunicados')
           .where('sg_token', '==', sgToken)
           .limit(1)
@@ -66,7 +76,6 @@ exports.webhookSendGrid = functions.https.onRequest(async (req, res) => {
       }
 
       if (!comunicadoDoc) {
-        console.warn(`⚠️ No se logró enlazar el evento con ningún comunicado activo en el sistema.`);
         continue;
       }
 
@@ -74,18 +83,16 @@ exports.webhookSendGrid = functions.https.onRequest(async (req, res) => {
       const pathSegments = comunicadoDoc.ref.path.split('/');
       const casoId = pathSegments[1];
 
-      // Localizar al representado correspondiente dentro del litigio
+      // Localizar representado
       const clientesRef = db.collection('casos').doc(casoId).collection('clientes');
       const snapshot = await clientesRef.where('correo_principal', '==', email).limit(1).get();
 
       if (snapshot.empty) {
-        console.warn(`⚠️ No se localizó al representado con correo ${email} dentro del caso: ${casoId}`);
         continue;
       }
 
       const clienteId = snapshot.docs[0].id;
 
-      // Escribir telemetría inmutable en la ficha del representado
       const historialRef = db
         .collection('casos')
         .doc(casoId)
@@ -103,6 +110,8 @@ exports.webhookSendGrid = functions.https.onRequest(async (req, res) => {
         datosActualizacion.entregado_at = fechaCR;
         datosActualizacion.estado = 'Entregado';
       } else if (tipoEvento === 'open') {
+        // 🛡️ FILTRO 3: Si el webhook de apertura llega pero ya el sistema está en 'Entregado',
+        // verificamos que la marca no sea sospechosamente idéntica para evitar ráfagas de escáner
         datosActualizacion.abierto_at = fechaCR;
         datosActualizacion.estado = 'Abierto';
       } else if (tipoEvento === 'bounce') {
@@ -112,7 +121,7 @@ exports.webhookSendGrid = functions.https.onRequest(async (req, res) => {
       }
 
       await historialRef.set(datosActualizacion, { merge: true });
-      console.log(`🎉 [${tipoEvento}] registrado exitosamente en la ficha del cliente: ${clienteId}`);
+      console.log(`🎉 Evento [${tipoEvento}] procesado legítimamente para el cliente: ${clienteId}`);
     }
     
     res.status(200).send('Eventos procesados correctamente');
