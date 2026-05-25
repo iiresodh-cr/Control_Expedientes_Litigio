@@ -55,7 +55,8 @@ import {
   RadioGroup,
   FormControlLabel,
   FormLabel,
-  Checkbox
+  Checkbox,
+  Collapse
 } from '@mui/material';
 import { 
   ArrowLeft, 
@@ -123,6 +124,57 @@ function TabPanel(props) {
   );
 }
 
+// =====================================================================================
+// SUB-COMPONENTE ENCAPSULADO: Maneja la expansión individual en el Historial de Casos
+// =====================================================================================
+function ItemComunicadoMasivo({ c }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <ListItem disablePadding sx={{ mb: 2, p: 2, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0', display: 'block' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
+        <Box>
+          <Typography variant="subtitle1" fontWeight="bold" color="primary.main">{c.asunto}</Typography>
+          <Typography variant="caption" color="text.secondary">
+            {`Enviado por: ${c.enviado_por} | Fecha: ${c.fecha_envio ? new Date(c.fecha_envio).toLocaleString() : ''} | Cobertura: ${c.tipo_cobertura === 'todos' ? 'Todos los representados' : 'Segmentación selectiva'} (${c.destinatarios_conteo || 0} correos)`}
+          </Typography>
+        </Box>
+      </Box>
+
+      <Button
+        size="small"
+        variant="text"
+        onClick={() => setExpanded(!expanded)}
+        sx={{ textTransform: 'none', fontSize: '0.75rem', p: 0, minWidth: 0, mb: 0.5, fontWeight: 'bold', color: 'primary.main' }}
+      >
+        {expanded ? "Ocultar contenido del mensaje" : "Ver contenido del mensaje"}
+      </Button>
+
+      <Collapse in={expanded}>
+        <Typography variant="body2" sx={{ my: 1, whiteSpace: 'pre-wrap', color: 'text.primary', bgcolor: '#ffffff', p: 1.5, borderRadius: 1, border: '1px solid #e2e8f0' }}>
+          {c.cuerpo}
+        </Typography>
+      </Collapse>
+
+      <Divider sx={{ my: 1 }} />
+      {c.pdf_url && (
+        <Button
+          component="a"
+          href={c.pdf_url}
+          target="_blank"
+          rel="noopener"
+          variant="text"
+          size="small"
+          startIcon={<File size={14} />}
+          sx={{ textTransform: 'none', fontWeight: 'bold', p: 0 }}
+        >
+          {c.pdf_nombre || 'Ver Documento Adjunto (PDF)'}
+        </Button>
+      )}
+    </ListItem>
+  );
+}
+
 export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole }) {
   const [activeTab, setActiveTab] = useState(0);
   const [clientes, setClientes] = useState([]);
@@ -186,8 +238,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [cuerpoComunicado, setCuerpoComunicado] = useState('');
   const [fileComunicado, setFileComunicado] = useState(null);
   const [uploadingComunicado, setUploadingComunicado] = useState(false);
-  
-  // 🛡️ FIJACIÓN ABSOLUTA DEL ESTADO QUE GENERÓ EL REFERENCE_ERROR
   const [uploadProgressComunicado, setUploadProgressComunicado] = useState(0);
 
   // Segmentación selectiva de destinatarios
@@ -633,7 +683,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
             const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
             await guardarDocumentoEnFirestore(fileComunicado.name, downloadURL, storagePath);
           } catch (exURL) {
-            setError(`Error obteniendo la URL del archivo: ${exURL.message}`);
+            setError(`Error obtaining the URL file: ${exURL.message}`);
             setUploadingComunicado(false);
           }
         }
@@ -918,7 +968,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
                             {d.descripcion || 'Sin descripción configurada.'}
                           </Typography>
                           <Typography variant="caption" component="span" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
-                            {`Fecha Doc: ${d.fecha_documento || 'No especificada'} | Subido: ${d.fecha_subida ? new Date(d.fecha_subida).toLocaleString() : ''}`}
+                            {`Fecha Doc: ${d.fecha_documento || 'No específica'} | Subido: ${d.fecha_subida ? new Date(d.fecha_subida).toLocaleString() : ''}`}
                           </Typography>
                         </Box>
                       } 
@@ -1083,32 +1133,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           ) : (
             <List>
               {comunicados.map((c) => (
-                <ListItem key={c.id} disablePadding sx={{ mb: 2, p: 2, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0', display: 'block' }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                    <Box>
-                      <Typography variant="subtitle1" fontWeight="bold" color="primary.main">{c.asunto}</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {`Enviado por: ${c.enviado_por} | Fecha: ${c.fecha_envio ? new Date(c.fecha_envio).toLocaleString() : ''} | Cobertura: ${c.tipo_cobertura === 'todos' ? 'Todos los representados' : 'Segmentación selectiva'} (${c.destinatarios_conteo || 0} correos)`}
-                      </Typography>
-                    </Box>
-                  </Box>
-                  <Typography variant="body2" sx={{ my: 1.5, whiteSpace: 'pre-wrap', color: 'text.primary' }}>{c.cuerpo}</Typography>
-                  <Divider sx={{ my: 1 }} />
-                  {c.pdf_url && (
-                    <Button
-                      component="a"
-                      href={c.pdf_url}
-                      target="_blank"
-                      rel="noopener"
-                      variant="text"
-                      size="small"
-                      startIcon={<File size={14} />}
-                      sx={{ textTransform: 'none', fontWeight: 'bold', p: 0 }}
-                    >
-                      {c.pdf_nombre || 'Ver Documento Adjunto (PDF)'}
-                    </Button>
-                  )}
-                </ListItem>
+                <ItemComunicadoMasivo key={c.id} c={c} />
               ))}
             </List>
           )}
