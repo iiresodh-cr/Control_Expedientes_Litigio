@@ -79,7 +79,7 @@ export default function HubIntranet({ setView, userRole }) {
               Sitio Web
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ minHeight: 48, mb: 2 }}>
-              Administración del sitio web institucional, actualización de contenidos y gestión del portal público.
+              Administración del sitio web, actualización de contenidos y gestión del portal público.
             </Typography>
             
             <Button 
