@@ -35,7 +35,7 @@ export default function HubIntranet({ setView, userRole }) {
             <Scale size={42} style={{ color: '#1a365d', marginBottom: '16px' }} />
             <Typography variant="h6" fontWeight="bold" gutterBottom>Gestión de Litigios</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ minHeight: 48, mb: 2 }}>
-              Control de expedientes, registro de representados, plazos fatales y mailing masivo.
+              Control de expedientes, registro de representados, plazos fatales y envío de comunicados.
             </Typography>
             <Button 
               variant="contained" 
@@ -54,7 +54,7 @@ export default function HubIntranet({ setView, userRole }) {
             <Users size={42} style={{ color: '#64748b', marginBottom: '16px' }} />
             <Typography variant="h6" fontWeight="bold" gutterBottom>Recursos Humanos</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ minHeight: 48, mb: 2 }}>
-              Gestión de personal corporativo, control de asistencia, marcas y perfiles de usuario.
+              Gestión de personal, marcas y perfiles de usuario.
             </Typography>
             <Button variant="outlined" disabled fullWidth sx={{ textTransform: 'none', borderRadius: 2 }}>
               Próximamente
