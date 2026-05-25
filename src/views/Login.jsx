@@ -1,157 +1,121 @@
-import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { 
-  Box, 
-  Button, 
-  Typography, 
-  Paper, 
-  Container,
-  Alert,
-  CircularProgress 
-} from '@mui/material';
-import { Scale } from 'lucide-react';
+import React from 'react';
+import { Box, Button, Typography, Paper } from '@mui/material';
+import { LogIn } from 'lucide-react';
+import { useAuth } from '../context/AuthContext'; // Ajusta según tu estructura real
 
 export default function Login({ institutionalError, setInstitutionalError }) {
-  const { loginWithGoogle } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [localError, setLocalError] = useState('');
+  const { loginWithGoogle } = useAuth(); // Ajusta según el nombre exacto de tu función de login
 
   const handleLogin = async () => {
-    setLoading(true);
-    setLocalError('');
-    
-    if (setInstitutionalError) {
-      setInstitutionalError('');
-    }
-    
     try {
+      if (setInstitutionalError) setInstitutionalError('');
       await loginWithGoogle();
-    } catch (err) {
-      // PERÍMETRO CERRADO: Se eliminó el console.error para no filtrar tecnologías al navegador
-      setLocalError('Acceso denegado: No tiene acceso a esta plataforma.');
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      console.error("Error en autenticación:", error);
     }
   };
-
-  const errorAMostrar = localError || institutionalError;
 
   return (
     <Box 
       sx={{ 
         display: 'flex', 
-        alignItems: 'center', 
         justifyContent: 'center', 
+        alignItems: 'center', 
         minHeight: '100vh', 
-        bgcolor: '#f8fafc' 
+        bgcolor: '#f1f5f9',
+        p: 2
       }}
     >
-      <Container maxWidth="xs">
-        <Paper 
-          elevation={0}
+      <Paper 
+        elevation={0}
+        sx={{ 
+          p: 4, 
+          borderRadius: 4, 
+          maxWidth: 420, // La tarjeta es más ancha que el logo, queda perfecto
+          width: '100%',
+          textAlign: 'center', 
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.02), 0 8px 10px -6px rgba(0,0,0,0.02)'
+        }}
+      >
+        {/* 🚀 LOGO INSTITUCIONAL: Ajustado a 300x92px reales */}
+        <Box sx={{ mb: 4, display: 'flex', justifyContent: 'center' }}>
+          <img 
+            src="/Logo-simple.png" 
+            alt="Logo IIRESODH" 
+            style={{ 
+              // Usamos ancho máximo para responsividad y alto automático para mantener aspect ratio
+              maxWidth: '300px', 
+              width: '100%', // Se encoge en móviles muy pequeños
+              height: 'auto', // Calculado automáticamente a ~92px si el ancho es 300px
+              objectFit: 'contain',
+              display: 'block'
+            }} 
+          />
+        </Box>
+
+        {/* Identidad de la Intranet Global */}
+        <Typography 
+          variant="h5" 
+          fontWeight="bold" 
+          gutterBottom 
+          color="#1a365d"
+          sx={{ letterSpacing: 0.5, mb: 1 }}
+        >
+          Intranet Global IIRESODH
+        </Typography>
+
+        <Typography 
+          variant="body2" 
+          color="text.secondary" 
+          sx={{ mb: 4, px: 2, lineHeight: 1.6 }}
+        >
+          Acceso exclusivo para personal legal, administrativo y operativo autorizado de IIRESODH.
+        </Typography>
+
+        {/* Mensaje de error perimetral */}
+        {institutionalError && (
+          <Typography 
+            variant="caption" 
+            color="error" 
+            sx={{ display: 'block', mb: 2, fontWeight: 'bold', bgcolor: '#fef2f2', p: 1.5, borderRadius: 2 }}
+          >
+            {institutionalError}
+          </Typography>
+        )}
+
+        {/* BOTÓN DE ACCESO SEGURO */}
+        <Button 
+          variant="contained" 
+          fullWidth 
+          startIcon={<LogIn size={18} />} 
+          onClick={handleLogin}
           sx={{ 
-            p: 4, 
-            borderRadius: 4, 
-            textAlign: 'center', 
-            border: '1px solid #e2e8f0',
-            boxShadow: '0px 10px 25px rgba(0, 0, 0, 0.02)'
+            textTransform: 'none', 
+            fontWeight: 'bold', 
+            py: 1.5, 
+            borderRadius: 2,
+            bgcolor: '#1a365d',
+            fontSize: '0.95rem',
+            boxShadow: 'none',
+            '&:hover': {
+              bgcolor: '#0f233c',
+              boxShadow: 'none'
+            }
           }}
         >
-          {/* BLOQUE LOGOTIPO JURÍDICO */}
-          <Box 
-            sx={{ 
-              display: 'flex', 
-              justifyContent: 'center', 
-              mb: 3 
-            }}
-          >
-            <Box 
-              sx={{ 
-                bgcolor: '#1a365d', 
-                p: 2, 
-                borderRadius: 3,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}
-            >
-              <Scale size={40} color="#c5a880" />
-            </Box>
-          </Box>
+          Iniciar con @iiresodh.org
+        </Button>
 
-          {/* TÍTULO OFICIAL CORREGIDO */}
-          <Typography 
-            variant="h5" 
-            fontWeight="bold" 
-            color="#1a365d" 
-            gutterBottom
-            sx={{ letterSpacing: 0.5 }}
-          >
-            Control de Expedientes de Litigio
-          </Typography>
-
-          <Typography 
-            variant="body2" 
-            color="text.secondary" 
-            sx={{ mb: 4 }}
-          >
-            Acceso exclusivo para personal legal y administrativo de IIRESODH.
-          </Typography>
-
-          {/* ALERTA UNIFICADA */}
-          {errorAMostrar && (
-            <Alert 
-              severity="error" 
-              sx={{ 
-                mb: 3, 
-                borderRadius: 2,
-                textAlign: 'left',
-                fontWeight: 'medium'
-              }}
-            >
-              {errorAMostrar}
-            </Alert>
-          )}
-
-          {/* BOTÓN DE INGRESO CON GOOGLE */}
-          <Button
-            fullWidth
-            variant="contained"
-            size="large"
-            disabled={loading}
-            onClick={handleLogin}
-            sx={{
-              bgcolor: '#1a365d',
-              color: '#ffffff',
-              textTransform: 'none',
-              fontWeight: 'bold',
-              borderRadius: 2.5,
-              py: 1.5,
-              '&:hover': {
-                bgcolor: '#112542'
-              }
-            }}
-          >
-            {loading ? (
-              <CircularProgress 
-                size={24} 
-                color="inherit" 
-              />
-            ) : (
-              'Iniciar con @iiresodh.org'
-            )}
-          </Button>
-
-          <Box sx={{ mt: 4 }}>
-            <Typography 
-              variant="caption" 
-              color="text.disabled"
-            >
-              Control de Expedientes de Litigio
-            </Typography>
-          </Box>
-        </Paper>
-      </Container>
+        {/* FOOTER GENERAL */}
+        <Typography 
+          variant="caption" 
+          color="text.disabled" 
+          sx={{ display: 'block', mt: 4, fontSize: '0.75rem' }}
+        >
+          IIRESODH - Intranet
+        </Typography>
+      </Paper>
     </Box>
   );
 }
