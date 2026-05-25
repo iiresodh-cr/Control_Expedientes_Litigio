@@ -509,7 +509,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   };
 
   // =====================================================================================
-  // MANEJADOR OPTIMIZADO: Adjunto Opcional + Telemetría Atómica nativa para la extensión
+  // MANEJADOR CORRECTIVO: Adjunto Opcional + Telemetría Atómica Vía X-SMTPAPI en Raíz
   // =====================================================================================
   const handleCreateComunicado = async (e) => {
     e.preventDefault();
@@ -541,7 +541,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     const nuevoComunicadoDoc = doc(comunicadoCollectionRef);
     const comunicadoId = nuevoComunicadoDoc.id;
 
-    // Función encapsulada para escribir en la Base de Datos independientemente de si hay adjunto o no
     const guardarDocumentoEnFirestore = async (pdfNombre = '', pdfUrl = '', storagePath = '') => {
       try {
         const modeloDocumentoMail = {
@@ -554,12 +553,14 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
               cuerpo: cuerpoComunicado.trim()
             }
           },
-          // SOLUCIÓN CLAVE: Pasamos las variables dentro de 'sendGrid.customArgs' para que no se pierdan
-          sendGrid: {
-            customArgs: {
-              casoId: caso.id,
-              comunicadoId: comunicadoId
-            }
+          // CORRECCIÓN CARDINAL: La extensión lee los encabezados si están en la RAÍZ del documento
+          headers: {
+            "X-SMTPAPI": JSON.stringify({
+              unique_args: {
+                casoId: caso.id,
+                comunicadoId: comunicadoId
+              }
+            })
           },
           asunto: asuntoComunicado.trim(),
           cuerpo: cuerpoComunicado.trim(),
@@ -569,7 +570,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           destinatarios_conteo: listaCorreos.length
         };
 
-        // Si el usuario cargó un adjunto opcional, inyectamos las propiedades del archivo
         if (pdfUrl) {
           modeloDocumentoMail.pdf_nombre = pdfNombre;
           modeloDocumentoMail.pdf_url = pdfUrl;
@@ -584,7 +584,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           };
         }
 
-        // Escritura atómica usando setDoc con el ID pre-calculado
+        // Escritura síncrona/atómica usando setDoc con el ID pre-calculado
         await setDoc(nuevoComunicadoDoc, modeloDocumentoMail);
 
         await registrarLogAuditoria(
@@ -608,7 +608,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
       }
     };
 
-    // Bifurcación del flujo de carga según la presencia del archivo opcional
     if (fileComunicado) {
       const storagePath = `casos/${caso.id}/documentos/${Date.now()}_${fileComunicado.name}`;
       const storageRef = ref(storage, storagePath);
@@ -634,7 +633,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         }
       );
     } else {
-      // Flujo instantáneo: Se despacha sin ningún archivo adjunto
       await guardarDocumentoEnFirestore();
     }
   };
@@ -1398,7 +1396,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
             )}
           </Box>
 
-          {/* AJUSTE: CAMPO DE ADJUNTO AHORA TOTALMENTE OPCIONAL (REMOCIÓN DE REQUIRED) */}
           <Button 
             variant="outlined" 
             component="label" 
@@ -1408,7 +1405,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
             sx={{ textTransform: 'none', borderRadius: 2, fontWeight: 'bold', py: 1.5 }}
           >
             {fileComunicado ? fileComunicado.name : 'Adjuntar Documento del Comunicado (PDF) - Opcional'}
-            <input type="file" accept="application/pdf" hidden onChange={(e) => setFileComunicado(e.target.files[0])} />
+            <input type="file" accept="application/pdf" hidden required={false} onChange={(e) => setFileComunicado(e.target.files[0])} />
           </Button>
 
           {uploadingComunicado && (
