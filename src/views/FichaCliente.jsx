@@ -37,7 +37,8 @@ import {
   InputLabel, 
   Select, 
   MenuItem, 
-  IconButton 
+  IconButton,
+  Collapse
 } from '@mui/material';
 import { 
   ArrowLeft, 
@@ -91,6 +92,86 @@ const COUNTRIES = [
   { code: 'IT', name: 'Italia', phone: '+39' }
 ];
 
+// =====================================================================================
+// SUB-COMPONENTE ENCAPSULADO: Maneja el estado expandible/colapsable de forma individual
+// =====================================================================================
+function ItemNotificacion({ item }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const cfg = (() => {
+    if (item.estado === 'Abierto') return { color: 'success', icon: <Eye size={14} />, label: 'Abierto' };
+    if (item.estado === 'Entregado') return { color: 'info', icon: <CheckCircle size={14} />, label: 'Entregado' };
+    if (item.estado === 'Rebotado') return { color: 'error', icon: <AlertTriangle size={14} />, label: 'Rebotado' };
+    return { color: 'default', icon: <Mail size={14} />, label: 'Enviado' };
+  })();
+
+  return (
+    <Box sx={{ mb: 2, p: 2, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
+        <Typography variant="body2" fontWeight="bold" color="text.primary" sx={{ maxWidth: '70%' }}>
+          {item.asunto}
+        </Typography>
+        <Chip size="small" color={cfg.color} label={cfg.label} sx={{ fontWeight: 'bold', fontSize: '0.7rem', height: 20 }} />
+      </Box>
+      
+      {/* Botón interactivo para abrir/cerrar el cuerpo del mensaje por omisión */}
+      <Button
+        size="small"
+        variant="text"
+        onClick={() => setExpanded(!expanded)}
+        sx={{ textTransform: 'none', fontSize: '0.72rem', p: 0, minWidth: 0, mb: 0.5, fontWeight: 'bold', color: 'primary.main' }}
+      >
+        {expanded ? "Ocultar contenido del mensaje" : "Ver contenido del mensaje"}
+      </Button>
+
+      {/* Contenedor colapsable animado */}
+      <Collapse in={expanded}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', my: 1, whiteSpace: 'pre-wrap', bgcolor: '#ffffff', p: 1, borderRadius: 1, border: '1px solid #e2e8f0' }}>
+          {item.cuerpo}
+        </Typography>
+      </Collapse>
+
+      {item.pdf_url && (
+        <Box sx={{ mt: 0.5 }}>
+          <Button
+            component="a"
+            href={item.pdf_url}
+            target="_blank"
+            rel="noopener"
+            variant="text"
+            size="small"
+            startIcon={<File size={12} />}
+            sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.7rem', p: 0, justifyContent: 'flex-start' }}
+          >
+            Descargar Anexo: {item.pdf_nombre || 'Documento Adjunto'}
+          </Button>
+        </Box>
+      )}
+
+      <Divider sx={{ my: 1, borderStyle: 'dashed' }} />
+
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+        {item.entregado_at && (
+          <Typography variant="caption" color="text.secondary">
+            Recibido: <strong>{item.entregado_at}</strong>
+          </Typography>
+        )}
+        {item.abierto_at && (
+          <Typography variant="caption" color="success.main">
+            Abierto: <strong>{item.abierto_at}</strong>
+          </Typography>
+        )}
+        {item.rebotado_at && (
+          <Typography variant="caption" color="error.main">
+            Rebote: <strong>{item.rebotado_at}</strong>
+            {item.causa_rebote && <span style={{ display: 'block', fontStyle: 'italic', fontSize: '0.65rem', marginTop: '2px' }}>{item.causa_rebote}</span>}
+          </Typography>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
 export default function FichaCliente({ casoId, clienteId, onVolver, currentUserEmail }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -111,7 +192,7 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
   const [codigoTelefonoSecundario, setCodigoTelefonoSecundario] = useState('+506');
   const [telefonoSecundario, setTelefonoSecundario] = useState('');
 
-  const [notas, setNotas] = useState([]);
+  const [notes, setNotas] = useState([]);
   const [nuevaNota, setNuevaNota] = useState('');
   const [documentos, setDocumentos] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -123,9 +204,6 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
 
   const clienteRef = doc(db, 'casos', casoId, 'clientes', clienteId);
 
-  // =====================================================================================
-  // BLINDAJE EN TIEMPO REAL NATIVO: Transforma capturas estáticas a escuchadores onSnapshot
-  // =====================================================================================
   useEffect(() => {
     setLoading(true);
     setError('');
@@ -199,7 +277,6 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
       setLoadingHistorial(false);
     });
 
-    // Desuscripción limpia de sockets al desmontar el componente (Previene fugas de memoria)
     return () => {
       unsubCliente();
       unsubNotas();
@@ -435,10 +512,10 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
             </Box>
             
             <List sx={{ maxHeight: 300, overflow: 'auto' }}>
-              {notas.length === 0 ? (
+              {notes.length === 0 ? (
                 <Typography variant="body2" color="text.disabled">No hay notas.</Typography>
               ) : (
-                notas.map((n) => (
+                notes.map((n) => (
                   <Card key={n.id} sx={{ mb: 1.5, boxShadow: 'none', bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
                     <CardContent sx={{ p: '12px !important' }}>
                       <Typography variant="body2">{n.texto}</Typography>
@@ -506,7 +583,6 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
             </List>
           </Paper>
 
-          {/* VISTA DEL HISTORIAL: Renderiza de forma 100% autónoma los datos íntegros del comunicado */}
           <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, color: 'primary.main' }}>
               <Mail size={20} />
@@ -519,67 +595,9 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
               <Typography variant="body2" color="text.disabled">No se registran notificaciones para este representado.</Typography>
             ) : (
               <List sx={{ maxHeight: 380, overflow: 'auto', p: 0 }}>
-                {historialComunicados.map((item) => {
-                  const cfg = (() => {
-                    if (item.estado === 'Abierto') return { color: 'success', icon: <Eye size={14} />, label: 'Abierto' };
-                    if (item.estado === 'Entregado') return { color: 'info', icon: <CheckCircle size={14} />, label: 'Entregado' };
-                    if (item.estado === 'Rebotado') return { color: 'error', icon: <AlertTriangle size={14} />, label: 'Rebotado' };
-                    return { color: 'default', icon: <Mail size={14} />, label: 'Enviado' };
-                  })();
-
-                  return (
-                    <Box key={item.id} sx={{ mb: 2, p: 2, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                        <Typography variant="body2" fontWeight="bold" color="text.primary" sx={{ maxWidth: '70%' }}>
-                          {item.asunto}
-                        </Typography>
-                        <Chip size="small" color={cfg.color} label={cfg.label} sx={{ fontWeight: 'bold', fontSize: '0.7rem', height: 20 }} />
-                      </Box>
-                      
-                      {/* CUERPO DEL CORREO INDEPENDIENTE Y COMPLETO */}
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', my: 1, whiteSpace: 'pre-wrap', bgcolor: '#ffffff', p: 1, borderRadius: 1, border: '1px solid #e2e8f0' }}>
-                        {item.cuerpo}
-                      </Typography>
-
-                      {/* ENLACE AL ANEXO PDF DE MANERA EXPLICITA Y PERMANENTE */}
-                      {item.pdf_url && (
-                        <Button
-                          component="a"
-                          href={item.pdf_url}
-                          target="_blank"
-                          rel="noopener"
-                          variant="text"
-                          size="small"
-                          startIcon={<File size={12} />}
-                          sx={{ textTransform: 'none', fontWeight: 'bold', fontSize: '0.7rem', p: 0, mt: 0.5, justifyContent: 'flex-start' }}
-                        >
-                          Descargar Anexo: {item.pdf_nombre || 'Documento Adjunto'}
-                        </Button>
-                      )}
-
-                      <Divider sx={{ my: 1, borderStyle: 'dashed' }} />
-
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                        {item.entregado_at && (
-                          <Typography variant="caption" color="text.secondary">
-                            Recibido: <strong>{item.entregado_at}</strong>
-                          </Typography>
-                        )}
-                        {item.abierto_at && (
-                          <Typography variant="caption" color="success.main">
-                            Abierto: <strong>{item.abierto_at}</strong>
-                          </Typography>
-                        )}
-                        {item.rebotado_at && (
-                          <Typography variant="caption" color="error.main">
-                            Rebote: <strong>{item.rebotado_at}</strong>
-                            {item.causa_rebote && <span style={{ display: 'block', fontStyle: 'italic', fontSize: '0.65rem', marginTop: '2px' }}>{item.causa_rebote}</span>}
-                          </Typography>
-                        )}
-                      </Box>
-                    </Box>
-                  );
-                })}
+                {historialComunicados.map((item) => (
+                  <ItemNotificacion key={item.id} item={item} />
+                ))}
               </List>
             )}
           </Paper>
