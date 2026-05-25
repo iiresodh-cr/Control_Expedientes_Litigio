@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db, storage } from '../config/firebase';
+import { db, storage } from '../../config/firebase';
 import { 
   collection, 
   addDoc, 
@@ -74,7 +74,7 @@ import {
   Mail
 } from 'lucide-react';
 import FichaCliente from './FichaCliente';
-import { registrarLogAuditoria } from '../utils/auditLogger';
+import { registrarLogAuditoria } from '../../utils/auditLogger';
 
 const DOC_TYPES = [
   'Cédula de Identidad', 
