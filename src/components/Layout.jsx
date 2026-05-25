@@ -5,25 +5,20 @@ import {
   ListItem, ListItemButton, ListItemIcon, ListItemText, 
   IconButton, Avatar, Divider 
 } from '@mui/material';
-import { Scale, Briefcase, ShieldAlert, LogOut, UserCheck, Home } from 'lucide-react';
+import { Briefcase, ShieldAlert, LogOut, UserCheck, Home } from 'lucide-react';
 
 const drawerWidth = 260;
 
 export default function Layout({ children, currentView, setView, userRole }) {
   const { user, logout } = useAuth();
 
-  // 🚀 EVALUACIÓN DINÁMICA: Detectamos si el usuario está en el panel central (Hub)
   const esHub = currentView === 'hub';
-
-  // Construcción dinámica del menú de navegación lateral
   const menuItems = [];
 
-  // Si no está en el Hub, añadimos la opción de regresar al menú global
   if (!esHub) {
     menuItems.push({ text: 'Menú Principal', icon: <Home size={20} />, id: 'hub' });
   }
 
-  // Elementos operativos de la barra lateral
   menuItems.push({ text: 'Casos y Litigios', icon: <Briefcase size={20} />, id: 'casos' });
 
   if (userRole === 'Superadmin' || userRole === 'Admin') {
@@ -36,7 +31,7 @@ export default function Layout({ children, currentView, setView, userRole }) {
 
   return (
     <Box sx={{ display: 'flex' }}>
-      {/* BARRA SUPERIOR (GLOBAL) */}
+      {/* BARRA SUPERIOR BRANDING */}
       <AppBar 
         position="fixed" 
         sx={{ 
@@ -46,15 +41,36 @@ export default function Layout({ children, currentView, setView, userRole }) {
         }}
       >
         <Toolbar sx={{ justifyContent: 'space-between' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Scale size={24} color="#c5a880" />
+          
+          {/* SECCIÓN IZQUIERDA: Alineación de activos de marca */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             
-            {/* 🚀 CORRECCIÓN 1: Identidad unificada de la suite corporativa */}
-            <Typography variant="h6" fontWeight="bold" noWrap component="div" sx={{ letterSpacing: 0.5 }}>
-              IIRESODH - Intranet
-            </Typography>
+            {/* 🚀 ISOTIPO: Reducción controlada de 512px a 36px manteniendo proporción */}
+            <img 
+              src="/Isotipo-w.png" 
+              alt="Isotipo IIRESODH" 
+              style={{ 
+                height: '36px', 
+                width: 'auto', // Evita que el ancho se desfase de los 513px nativos
+                objectFit: 'contain',
+                display: 'block'
+              }} 
+            />
+            
+            {/* 🚀 LOGO TEXTUAL: Reducción de 92px de alto a 26px para que calce en el Toolbar */}
+            <img 
+              src="/Logo.png" 
+              alt="IIRESODH - Intranet" 
+              style={{ 
+                height: '26px', 
+                width: 'auto', // Calcula el ancho proporcional a ~85px de forma automática
+                objectFit: 'contain',
+                display: 'block'
+              }} 
+            />
           </Box>
           
+          {/* SECCIÓN DERECHA: Datos del Usuario Activo */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Box sx={{ textAlign: 'right', display: { xs: 'none', sm: 'block' } }}>
               <Typography variant="body2" fontWeight="medium" color="white">
@@ -79,7 +95,7 @@ export default function Layout({ children, currentView, setView, userRole }) {
         </Toolbar>
       </AppBar>
 
-      {/* 🚀 CORRECCIÓN 2: Renderizado condicional de la Sidebar */}
+      {/* BARRA LATERAL (SIDEBAR) */}
       {!esHub && (
         <Drawer
           variant="permanent"
@@ -99,7 +115,6 @@ export default function Layout({ children, currentView, setView, userRole }) {
             <List sx={{ px: 1.5 }}>
               {menuItems.map((item, index) => (
                 <React.Fragment key={item.id}>
-                  {/* Si es el primer elemento operativo de litigios y venimos del botón de menú, metemos un divisor */}
                   {!esHub && index === 1 && <Divider sx={{ my: 1.5 }} />}
                   
                   <ListItem disablePadding sx={{ mb: 0.5 }}>
@@ -137,7 +152,7 @@ export default function Layout({ children, currentView, setView, userRole }) {
         </Drawer>
       )}
 
-      {/* CONTENIDO PRINCIPAL (Se auto-ajusta al 100% si esHub es true) */}
+      {/* CONTENIDO DE LA INTRANET */}
       <Box 
         component="main" 
         sx={{ 
