@@ -59,7 +59,7 @@ export default function Layout({ children, currentView, setView, userRole }) {
             
             {/* 🚀 LOGO TEXTUAL: Reducción de 92px de alto a 26px para que calce en el Toolbar */}
             <img 
-              src="/Logo.png" 
+              src="/logo.png" 
               alt="IIRESODH - Intranet" 
               style={{ 
                 height: '26px', 
