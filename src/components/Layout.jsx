@@ -3,18 +3,28 @@ import { useAuth } from '../context/AuthContext';
 import { 
   Box, Drawer, AppBar, Toolbar, List, Typography, 
   ListItem, ListItemButton, ListItemIcon, ListItemText, 
-  IconButton, Avatar 
+  IconButton, Avatar, Divider 
 } from '@mui/material';
-import { Scale, Briefcase, ShieldAlert, LogOut, UserCheck } from 'lucide-react';
+import { Scale, Briefcase, ShieldAlert, LogOut, UserCheck, Home } from 'lucide-react';
 
 const drawerWidth = 260;
 
 export default function Layout({ children, currentView, setView, userRole }) {
   const { user, logout } = useAuth();
 
-  const menuItems = [
-    { text: 'Casos y Litigios', icon: <Briefcase size={20} />, id: 'casos' },
-  ];
+  // 🚀 EVALUACIÓN DINÁMICA: Detectamos si el usuario está en el panel central (Hub)
+  const esHub = currentView === 'hub';
+
+  // Construcción dinámica del menú de navegación lateral
+  const menuItems = [];
+
+  // Si no está en el Hub, añadimos la opción de regresar al menú global
+  if (!esHub) {
+    menuItems.push({ text: 'Menú Principal', icon: <Home size={20} />, id: 'hub' });
+  }
+
+  // Elementos operativos de la barra lateral
+  menuItems.push({ text: 'Casos y Litigios', icon: <Briefcase size={20} />, id: 'casos' });
 
   if (userRole === 'Superadmin' || userRole === 'Admin') {
     menuItems.push({ text: 'Control de Usuarios', icon: <UserCheck size={20} />, id: 'usuarios' });
@@ -26,14 +36,22 @@ export default function Layout({ children, currentView, setView, userRole }) {
 
   return (
     <Box sx={{ display: 'flex' }}>
-      {/* BARRA SUPERIOR */}
-      <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: '#1a365d', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+      {/* BARRA SUPERIOR (GLOBAL) */}
+      <AppBar 
+        position="fixed" 
+        sx={{ 
+          zIndex: (theme) => theme.zIndex.drawer + 1, 
+          bgcolor: '#1a365d', 
+          boxShadow: '0 1px 3px rgba(0,0,0,0.05)' 
+        }}
+      >
         <Toolbar sx={{ justifyContent: 'space-between' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <Scale size={24} color="#c5a880" />
-            {/* MODIFICACIÓN: Identidad corporativa y nombre del sistema actualizado */}
+            
+            {/* 🚀 CORRECCIÓN 1: Identidad unificada de la suite corporativa */}
             <Typography variant="h6" fontWeight="bold" noWrap component="div" sx={{ letterSpacing: 0.5 }}>
-              Control de Expedientes de Litigio
+              IIRESODH - Intranet
             </Typography>
           </Box>
           
@@ -47,7 +65,6 @@ export default function Layout({ children, currentView, setView, userRole }) {
               </Typography>
             </Box>
             
-            {/* MODIFICACIÓN: Inyección de photoURL de Google con fallback automático a letra inicial si no existe */}
             <Avatar 
               src={user?.photoURL} 
               sx={{ bgcolor: '#c5a880', width: 36, height: 36, fontSize: '0.9rem', fontWeight: 'bold' }}
@@ -62,51 +79,76 @@ export default function Layout({ children, currentView, setView, userRole }) {
         </Toolbar>
       </AppBar>
 
-      {/* BARRA LATERAL (SIDEBAR) */}
-      <Drawer
-        variant="permanent"
-        sx={{
-          width: drawerWidth,
-          flexShrink: 0,
-          [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box', borderRight: '1px solid #e2e8f0', bgcolor: '#ffffff' },
+      {/* 🚀 CORRECCIÓN 2: Renderizado condicional de la Sidebar */}
+      {!esHub && (
+        <Drawer
+          variant="permanent"
+          sx={{
+            width: drawerWidth,
+            flexShrink: 0,
+            [`& .MuiDrawer-paper`]: { 
+              width: drawerWidth, 
+              boxSizing: 'border-box', 
+              borderRight: '1px solid #e2e8f0', 
+              bgcolor: '#ffffff' 
+            },
+          }}
+        >
+          <Toolbar />
+          <Box sx={{ overflow: 'auto', mt: 2 }}>
+            <List sx={{ px: 1.5 }}>
+              {menuItems.map((item, index) => (
+                <React.Fragment key={item.id}>
+                  {/* Si es el primer elemento operativo de litigios y venimos del botón de menú, metemos un divisor */}
+                  {!esHub && index === 1 && <Divider sx={{ my: 1.5 }} />}
+                  
+                  <ListItem disablePadding sx={{ mb: 0.5 }}>
+                    <ListItemButton 
+                      onClick={() => setView(item.id)}
+                      selected={currentView === item.id}
+                      sx={{
+                        borderRadius: 2,
+                        color: currentView === item.id ? 'primary.main' : 'text.secondary',
+                        bgcolor: currentView === item.id ? 'rgba(26, 54, 93, 0.04)' : 'transparent',
+                        '&.Mui-selected': {
+                          bgcolor: 'rgba(26, 54, 93, 0.08)',
+                          color: 'primary.main',
+                          fontWeight: 'bold',
+                          '&:hover': { bgcolor: 'rgba(26, 54, 93, 0.12)' }
+                        }
+                      }}
+                    >
+                      <ListItemIcon sx={{ color: currentView === item.id ? 'primary.main' : 'text.disabled', minWidth: 40 }}>
+                        {item.icon}
+                      </ListItemIcon>
+                      <ListItemText 
+                        primary={item.text} 
+                        primaryTypographyProps={{ 
+                          fontSize: '0.9rem', 
+                          fontWeight: currentView === item.id ? 600 : 500 
+                        }} 
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                </React.Fragment>
+              ))}
+            </List>
+          </Box>
+        </Drawer>
+      )}
+
+      {/* CONTENIDO PRINCIPAL (Se auto-ajusta al 100% si esHub es true) */}
+      <Box 
+        component="main" 
+        sx={{ 
+          flexGrow: 1, 
+          p: 4, 
+          bgcolor: '#f8fafc', 
+          minHeight: '100vh',
+          width: esHub ? '100%' : `calc(100% - ${drawerWidth}px)`,
+          transition: 'width 0.15s ease-in-out'
         }}
       >
-        <Toolbar />
-        <Box sx={{ overflow: 'auto', mt: 2 }}>
-          <List sx={{ px: 1.5 }}>
-            {menuItems.map((item) => (
-              <ListItem key={item.id} disablePadding sx={{ mb: 0.5 }}>
-                <ListItemButton 
-                  onClick={() => setView(item.id)}
-                  selected={currentView === item.id}
-                  sx={{
-                    borderRadius: 2,
-                    color: currentView === item.id ? 'primary.main' : 'text.secondary',
-                    bgcolor: currentView === item.id ? 'rgba(26, 54, 93, 0.04)' : 'transparent',
-                    '&.Mui-selected': {
-                      bgcolor: 'rgba(26, 54, 93, 0.08)',
-                      color: 'primary.main',
-                      fontWeight: 'bold',
-                      '&:hover': { bgcolor: 'rgba(26, 54, 93, 0.12)' }
-                    }
-                  }}
-                >
-                  <ListItemIcon sx={{ color: currentView === item.id ? 'primary.main' : 'text.disabled', minWidth: 40 }}>
-                    {item.icon}
-                  </ListItemIcon>
-                  <ListItemText 
-                    primary={item.text} 
-                    primaryTypographyProps={{ fontSize: '0.9rem', fontWeight: currentView === item.id ? 600 : 500 }} 
-                  />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-        </Box>
-      </Drawer>
-
-      {/* CONTENIDO PRINCIPAL */}
-      <Box component="main" sx={{ flexGrow: 1, p: 4, bgcolor: '#f8fafc', minHeight: '100vh' }}>
         <Toolbar />
         {children}
       </Box>

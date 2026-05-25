@@ -7,11 +7,11 @@ import { Typography, Paper, Box, CircularProgress } from '@mui/material';
 // Vistas Generales de la Intranet
 import Login from './views/Login';
 import Layout from './components/Layout';
-import HubIntranet from './views/HubIntranet'; // 🚀 Nueva Vista Central
+import HubIntranet from './views/HubIntranet'; // 🚀 AGREGADO: Importar el nuevo menú de módulos
 import UsuariosAutorizados from './views/UsuariosAutorizados';
 import LogsAuditoria from './views/LogsAuditoria';
 
-// Vistas del Módulo de Litigio (Actualizadas a su nueva subcarpeta)
+// Vistas del Módulo de Litigio (🚀 CORREGIDO: Apuntando a la nueva subcarpeta /litigio/)
 import Casos from './views/litigio/Casos';
 import DetalleCaso from './views/litigio/DetalleCaso';
 
@@ -47,7 +47,7 @@ console.error = (...args) => {
 function App() {
   const { user, logout } = useAuth();
   
-  // 🚀 CAMBIO: El estado inicial ahora arranca en el 'hub' global de la intranet
+  // 🚀 CORREGIDO: El estado inicial ahora arranca en el 'hub' de la intranet, no en 'casos'
   const [view, setView] = useState('hub'); 
   const [casoSeleccionado, setCasoSeleccionado] = useState(null);
   
@@ -73,7 +73,7 @@ function App() {
         return;
       }
 
-      // 🚀 Al detectar inicio de sesión, mandamos al usuario al menú principal (Hub)
+      // 🚀 CORREGIDO: Al detectar inicio de sesión, mandamos al usuario directo al Hub principal
       setView('hub');
       setCasoSeleccionado(null);
 
@@ -114,6 +114,7 @@ function App() {
   // Protección de seguridad perimetral para vistas administrativas
   useEffect(() => {
     if (!loadingRole) {
+      // 🚀 CORREGIDO: Si hay un intento de intrusión o desajuste de rol, redirige al 'hub' global
       if (view === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
         setView('hub');
       }
@@ -149,9 +150,10 @@ function App() {
   }
 
   return (
-    <Layout currentView={vistaSegura === 'detalle_caso' ? 'casos' : vistaSegura} setView={setView} userRole={userRole}>
+    /* 🚀 CORREGIDO: Pasamos "vistaSegura" limpia al Layout para que pueda evaluar "currentView === 'hub'" y esconder la Sidebar */
+    <Layout currentView={vistaSegura} setView={setView} userRole={userRole}>
       
-      {/* 🚀 VISTA NATIVA: Hub Principal de la Intranet */}
+      {/* 🚀 AGREGADO: Renderizado de la vista de bienvenida e intercambio de módulos */}
       {vistaSegura === 'hub' && (
         <HubIntranet setView={setView} userRole={userRole} />
       )}
@@ -165,7 +167,7 @@ function App() {
         <DetalleCaso caso={casoSeleccionado} onVolver={handleVolverCasos} currentUserEmail={user.email} userRole={userRole} />
       )}
 
-      {/* Módulos Administrativos */}
+      {/* Módulos de Administración Global */}
       {vistaSegura === 'usuarios' && (
         <UsuariosAutorizados currentUserEmail={user.email} userRole={userRole} />
       )}
