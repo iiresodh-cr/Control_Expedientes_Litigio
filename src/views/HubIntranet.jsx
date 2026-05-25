@@ -1,12 +1,13 @@
 // src/views/HubIntranet.jsx
 import React from 'react';
 import { Box, Typography, Card, CardContent, Button, Divider } from '@mui/material';
-import { Scale, Users, ShieldCheck, FileSpreadsheet, Activity } from 'lucide-react';
+import { Scale, Users, ShieldCheck, FileSpreadsheet, Activity, Globe } from 'lucide-react'; // 🚀 AGREGADO: Icono Globe
 
 export default function HubIntranet({ setView, userRole }) {
   
-  // 🚀 CONTROL PERIMETRAL: Si es un usuario invitado de la organización, se le congela el acceso
+  // CONTROL PERIMETRAL: Roles autorizados para cada sección
   const tieneAccesoLitigio = userRole !== 'Invitado';
+  const tieneAccesoWeb = userRole === 'Superadmin'; // 🚀 AGREGADO: Llave exclusiva para el Superadmin
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', p: 2, mt: 2 }}>
@@ -20,6 +21,7 @@ export default function HubIntranet({ setView, userRole }) {
       </Box>
 
       {/* REJILLA DE MÓDULOS DE NEGOCIO */}
+      {/* 💡 NOTA: Mantenemos las 3 columnas en pantallas grandes; el 4to módulo bajará automáticamente de forma muy limpia */}
       <Box sx={{ 
         display: 'grid', 
         gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' }, 
@@ -27,13 +29,12 @@ export default function HubIntranet({ setView, userRole }) {
         mb: 6 
       }}>
         
-        {/* MÓDULO 1: LITIGIOS (Con Bloqueo Dinámico para Personal No Autorizado) */}
+        {/* MÓDULO 1: LITIGIOS */}
         <Card sx={{ 
           borderRadius: 3, 
           border: '1px solid #e2e8f0', 
           boxShadow: 'none', 
           transition: 'all 0.2s',
-          // 🚀 ESTILO CONDICIONAL: Opaca la tarjeta si el usuario tiene acceso denegado
           ...(!tieneAccesoLitigio && { opacity: 0.65, bgcolor: '#f8fafc' }),
           '&:hover': tieneAccesoLitigio ? { borderColor: 'primary.main', bgcolor: '#f8fafc' } : {}
         }}>
@@ -46,7 +47,6 @@ export default function HubIntranet({ setView, userRole }) {
               Control de expedientes, registro de representados, plazos fatales y envío de comunicados.
             </Typography>
             
-            {/* 🚀 BOTÓN INTELIGENTE: Se bloquea y cambia su semántica dinámicamente */}
             <Button 
               variant={tieneAccesoLitigio ? "contained" : "outlined"} 
               fullWidth 
@@ -64,7 +64,44 @@ export default function HubIntranet({ setView, userRole }) {
           </CardContent>
         </Card>
 
-        {/* MÓDULO 2: RECURSOS HUMANOS (ESTRUCTURA DE ESPERA) */}
+        {/* 🚀 MÓDULO 2: ADMINISTRACIÓN DEL SITIO WEB (Exclusivo Superadmin) */}
+        <Card sx={{ 
+          borderRadius: 3, 
+          border: '1px solid #e2e8f0', 
+          boxShadow: 'none', 
+          transition: 'all 0.2s',
+          ...(!tieneAccesoWeb && { opacity: 0.65, bgcolor: '#f8fafc' }),
+          '&:hover': tieneAccesoWeb ? { borderColor: 'primary.main', bgcolor: '#f8fafc' } : {}
+        }}>
+          <CardContent sx={{ p: 3, textAlign: 'center' }}>
+            <Globe size={42} style={{ color: tieneAccesoWeb ? '#1a365d' : '#94a3b8', marginBottom: '16px' }} />
+            <Typography variant="h6" fontWeight="bold" gutterBottom color={tieneAccesoWeb ? 'text.primary' : 'text.secondary'}>
+              Sitio Web
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ minHeight: 48, mb: 2 }}>
+              Administración del sitio web institucional, actualización de contenidos y gestión del portal público.
+            </Typography>
+            
+            <Button 
+              variant={tieneAccesoWeb ? "contained" : "outlined"} 
+              fullWidth 
+              disabled={!tieneAccesoWeb}
+              // Abre de forma segura el portal externo en una pestaña nueva para no sacar al usuario de la Intranet
+              onClick={() => window.open('https://iiresodh-web.web.app/admin', '_blank', 'noopener,noreferrer')} 
+              sx={{ 
+                textTransform: 'none', 
+                fontWeight: 'bold', 
+                borderRadius: 2,
+                ...(tieneAccesoWeb && { bgcolor: '#1a365d', '&:hover': { bgcolor: '#0f233c' } }),
+                ...(!tieneAccesoWeb && { color: 'error.main', borderColor: 'error.light' })
+              }}
+            >
+              {tieneAccesoWeb ? "Gestionar Sitio" : "Acceso Restringido"}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* MÓDULO 3: RECURSOS HUMANOS (ESTRUCTURA DE ESPERA) */}
         <Card sx={{ borderRadius: 3, bgcolor: '#f8fafc', border: '1px dashed #cbd5e1', boxShadow: 'none' }}>
           <CardContent sx={{ p: 3, textAlign: 'center', opacity: 0.6 }}>
             <Users size={42} style={{ color: '#64748b', marginBottom: '16px' }} />
@@ -78,7 +115,7 @@ export default function HubIntranet({ setView, userRole }) {
           </CardContent>
         </Card>
 
-        {/* MÓDULO 3: FINANZAS (ESTRUCTURA DE ESPERA) */}
+        {/* MÓDULO 4: FINANZAS (ESTRUCTURA DE ESPERA) */}
         <Card sx={{ borderRadius: 3, bgcolor: '#f8fafc', border: '1px dashed #cbd5e1', boxShadow: 'none' }}>
           <CardContent sx={{ p: 3, textAlign: 'center', opacity: 0.6 }}>
             <FileSpreadsheet size={42} style={{ color: '#64748b', marginBottom: '16px' }} />
