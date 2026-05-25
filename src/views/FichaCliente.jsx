@@ -118,7 +118,7 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  // NUEVOS ESTADOS: Control de telemetría de mensajería masiva / selectiva
+  // Control de telemetría de mensajería masiva / selectiva
   const [historialComunicados, setHistorialComunicados] = useState([]);
   const [loadingHistorial, setLoadingHistorial] = useState(false);
 
@@ -139,7 +139,6 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
         setDireccion(data.direccion || '');
         setCorreoPrincipal(data.correo_principal || data.correo || ''); 
         setCorreoSecundario(data.correo_secundario || '');
-        // Ajuste preventivo para conservar fallback original
         setCodigoTelefonoPrincipal(data.codigo_telefono_principal || data.codigo_telefono || '+506');
         setTelefonoPrincipal(data.telefono_principal || data.telefono || '');
         setCodigoTelefonoSecundario(data.codigo_telefono_secundario || '+506'); 
@@ -152,7 +151,7 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
       const snapshotDocs = await getDocs(query(collection(db, 'casos', casoId, 'clientes', clienteId, 'documentos'), orderBy('fecha_subida', 'desc')));
       setDocumentos(snapshotDocs.docs.map(d => ({ id: d.id, ...d.data() })));
 
-      // INTEGRACIÓN: Carga asíncrona de los eventos de SendGrid asociados a este representado
+      // Carga asíncrona de los eventos de SendGrid asociados a este representado
       setLoadingHistorial(true);
       try {
         const historialRef = collection(db, 'casos', casoId, 'clientes', clienteId, 'historial_comunicados');
@@ -162,7 +161,6 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
         for (const hDoc of snapHistorial.docs) {
           const datosEvento = hDoc.data();
           
-          // Resolución cruzada del asunto original desde el documento global de comunicados del caso
           const comGlobalRef = doc(db, 'casos', casoId, 'comunicados', hDoc.id);
           const snapCom = await getDoc(comGlobalRef);
           
@@ -172,10 +170,37 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
             ...datosEvento
           });
         }
+
+        // FUNCIÓN AUXILIAR COGNITIVA: Revierte la cadena regional de Costa Rica a milisegundos puros
+        const parseFechaCRAMilisegundos = (str) => {
+          if (!str) return 0;
+          try {
+            const partes = str.split(/[\s,]+/);
+            const fechaPartes = partes[0].split('/');
+            const horaPartes = partes[1].split(':');
+            const dia = parseInt(fechaPartes[0], 10);
+            const mes = parseInt(fechaPartes[1], 10) - 1;
+            const anio = parseInt(fechaPartes[2], 10);
+            const hora = parseInt(horaPartes[0], 10);
+            const mi = parseInt(horaPartes[1], 10);
+            const se = parseInt(horaPartes[2], 10);
+            return new Date(anio, mes, dia, hora, mi, se).getTime();
+          } catch (e) {
+            return 0;
+          }
+        };
+
+        // AJUSTE CRONOLÓGICO SOLICITADO: Ordenamiento descendente (de más nuevo a más viejo)
+        listaEventos.sort((a, b) => {
+          const tiempoA = parseFechaCRAMilisegundos(a.ultima_actualizacion);
+          const tiempoB = parseFechaCRAMilisegundos(b.ultima_actualizacion);
+          return tiempoB - tiempoA;
+        });
+
         setHistorialComunicados(listaEventos);
       } catch (errHist) {
-        console.error("Error al compilar historial de notificaciones:", errHist);
-      } finally {
+        console.error("Error al compilar historial de comunicados:", errHist);
+      } fillado: {
         setLoadingHistorial(false);
       }
 
@@ -413,7 +438,7 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
           <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, color: 'primary.main' }}>
               <StickyNote size={20} />
-              <Typography variant="h6" fontWeight="bold">Notas del Caso e Historial Jurídico</Typography>
+              <Typography variant="h6" fontWeight="bold">Notas del Caso</Typography>
             </Box>
             
             <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
@@ -495,11 +520,10 @@ export default function FichaCliente({ casoId, clienteId, onVolver, currentUserE
             </List>
           </Paper>
 
-          {/* INTEGRACIÓN EXCLUSIVA: Historial y Telemetría Atómica de Notificaciones de SendGrid */}
           <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2, color: 'primary.main' }}>
               <Mail size={20} />
-              <Typography variant="h6" fontWeight="bold">Historial de Notificaciones</Typography>
+              <Typography variant="h6" fontWeight="bold">Historial de Comunicados</Typography>
             </Box>
             
             {loadingHistorial ? (
