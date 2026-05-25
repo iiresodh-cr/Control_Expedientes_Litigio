@@ -186,6 +186,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
   const [cuerpoComunicado, setCuerpoComunicado] = useState('');
   const [fileComunicado, setFileComunicado] = useState(null);
   const [uploadingComunicado, setUploadingComunicado] = useState(false);
+  
+  // 🛡️ FIJACIÓN ABSOLUTA DEL ESTADO QUE GENERÓ EL REFERENCE_ERROR
   const [uploadProgressComunicado, setUploadProgressComunicado] = useState(0);
 
   // Segmentación selectiva de destinatarios
@@ -300,8 +302,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     setError('');
 
     const storagePath = `casos/${caso.id}/documentos/${Date.now()}_${file.name}`;
-    const storageRef = ref(storage, storagePath);
-    const uploadTask = uploadBytesResumable(storageRef, file);
+    const storagePathRef = ref(storage, storagePath);
+    const uploadTask = uploadBytesResumable(storagePathRef, file);
 
     uploadTask.on('state_changed', 
       (snap) => {
@@ -442,8 +444,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     setError('');
 
     const storagePath = `casos/${caso.id}/documentos/${Date.now()}_${fileProbatorio.name}`;
-    const storageRef = ref(storage, storagePath);
-    const uploadTask = uploadBytesResumable(storageRef, fileProbatorio);
+    const storagePathRef = ref(storage, storagePath);
+    const uploadTask = uploadBytesResumable(storagePathRef, fileProbatorio);
 
     uploadTask.on('state_changed', 
       (snap) => {
@@ -508,9 +510,6 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
     );
   };
 
-  // =====================================================================================
-  // MANEJADOR CORRECTIVO: Copia Íntegra de Datos por Representado (NoSQL Desnormalizado)
-  // =====================================================================================
   const handleCreateComunicado = async (e) => {
     e.preventDefault();
     if (!asuntoComunicado.trim() || !cuerpoComunicado.trim()) return;
@@ -577,10 +576,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
           };
         }
 
-        // 1. Escritura del documento maestro global para la extensión SMTP
         await setDoc(nuevoComunicadoDoc, modeloDocumentoMail);
 
-        // 2. DUPLICACIÓN EN CASCADA: Inyectar datos completos directamente en cada representado
         const fechaCR = new Date().toLocaleString('es-CR', { timeZone: 'America/Costa_Rica' });
         for (const clienteItem of poolClientesAEnviar) {
           const historialRef = doc(db, 'casos', caso.id, 'clientes', clienteItem.id, 'historial_comunicados', comunicadoId);
@@ -619,8 +616,8 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
 
     if (fileComunicado) {
       const storagePath = `casos/${caso.id}/documentos/${Date.now()}_${fileComunicado.name}`;
-      const storageRef = ref(storage, storagePath);
-      const uploadTask = uploadBytesResumable(storageRef, fileComunicado);
+      const storagePathRef = ref(storage, storagePath);
+      const uploadTask = uploadBytesResumable(storagePathRef, fileComunicado);
 
       uploadTask.on('state_changed', 
         (snap) => {
@@ -1419,7 +1416,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
 
           {uploadingComunicado && (
             <Box sx={{ width: '100%', mt: 1 }}>
-              <LinearProgress variant="determinate" value={uploadProgressCommunicado} />
+              <LinearProgress variant="determinate" value={uploadProgressComunicado} />
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 0.5 }}>
                 Subiendo circular... {uploadProgressComunicado}%
               </Typography>
