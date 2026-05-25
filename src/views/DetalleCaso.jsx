@@ -1108,7 +1108,7 @@ export default function DetalleCaso({ caso, onVolver, currentUserEmail, userRole
         <Paper sx={{ p: 3, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: 'none' }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
             <Box>
-              <Typography variant="h6" fontWeight="bold">Historial de Comunicados Masivos</Typography>
+              <Typography variant="h6" fontWeight="bold">Historial de Comunicados Enviados</Typography>
               <Typography variant="body2" color="text.secondary">Registro de circulares y comunicados enviados por correo a los representados.</Typography>
             </Box>
             <Button 
