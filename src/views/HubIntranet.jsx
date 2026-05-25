@@ -4,6 +4,10 @@ import { Box, Typography, Card, CardContent, Button, Divider } from '@mui/materi
 import { Scale, Users, ShieldCheck, FileSpreadsheet, Activity } from 'lucide-react';
 
 export default function HubIntranet({ setView, userRole }) {
+  
+  // 🚀 CONTROL PERIMETRAL: Si es un usuario invitado de la organización, se le congela el acceso
+  const tieneAccesoLitigio = userRole !== 'Invitado';
+
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', p: 2, mt: 2 }}>
       <Box sx={{ mb: 5, textAlign: 'center' }}>
@@ -23,27 +27,39 @@ export default function HubIntranet({ setView, userRole }) {
         mb: 6 
       }}>
         
-        {/* MÓDULO 1: LITIGIOS */}
+        {/* MÓDULO 1: LITIGIOS (Con Bloqueo Dinámico para Personal No Autorizado) */}
         <Card sx={{ 
           borderRadius: 3, 
           border: '1px solid #e2e8f0', 
           boxShadow: 'none', 
-          transition: 'all 0.2s', 
-          '&:hover': { borderColor: 'primary.main', bgcolor: '#f8fafc' } 
+          transition: 'all 0.2s',
+          // 🚀 ESTILO CONDICIONAL: Opaca la tarjeta si el usuario tiene acceso denegado
+          ...(!tieneAccesoLitigio && { opacity: 0.65, bgcolor: '#f8fafc' }),
+          '&:hover': tieneAccesoLitigio ? { borderColor: 'primary.main', bgcolor: '#f8fafc' } : {}
         }}>
           <CardContent sx={{ p: 3, textAlign: 'center' }}>
-            <Scale size={42} style={{ color: '#1a365d', marginBottom: '16px' }} />
-            <Typography variant="h6" fontWeight="bold" gutterBottom>Gestión de Litigios</Typography>
+            <Scale size={42} style={{ color: tieneAccesoLitigio ? '#1a365d' : '#94a3b8', marginBottom: '16px' }} />
+            <Typography variant="h6" fontWeight="bold" gutterBottom color={tieneAccesoLitigio ? 'text.primary' : 'text.secondary'}>
+              Gestión de Litigios
+            </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ minHeight: 48, mb: 2 }}>
               Control de expedientes, registro de representados, plazos fatales y envío de comunicados.
             </Typography>
+            
+            {/* 🚀 BOTÓN INTELIGENTE: Se bloquea y cambia su semántica dinámicamente */}
             <Button 
-              variant="contained" 
+              variant={tieneAccesoLitigio ? "contained" : "outlined"} 
               fullWidth 
+              disabled={!tieneAccesoLitigio}
               onClick={() => setView('casos')} 
-              sx={{ textTransform: 'none', fontWeight: 'bold', borderRadius: 2 }}
+              sx={{ 
+                textTransform: 'none', 
+                fontWeight: 'bold', 
+                borderRadius: 2,
+                ...(!tieneAccesoLitigio && { color: 'error.main', borderColor: 'error.light' })
+              }}
             >
-              Ingresar al Módulo
+              {tieneAccesoLitigio ? "Ingresar al Módulo" : "Acceso Restringido"}
             </Button>
           </CardContent>
         </Card>

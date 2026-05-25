@@ -7,11 +7,11 @@ import { Typography, Paper, Box, CircularProgress } from '@mui/material';
 // Vistas Generales de la Intranet
 import Login from './views/Login';
 import Layout from './components/Layout';
-import HubIntranet from './views/HubIntranet'; // 🚀 AGREGADO: Importar el nuevo menú de módulos
+import HubIntranet from './views/HubIntranet'; 
 import UsuariosAutorizados from './views/UsuariosAutorizados';
 import LogsAuditoria from './views/LogsAuditoria';
 
-// Vistas del Módulo de Litigio (🚀 CORREGIDO: Apuntando a la nueva subcarpeta /litigio/)
+// Vistas del Módulo de Litigio
 import Casos from './views/litigio/Casos';
 import DetalleCaso from './views/litigio/DetalleCaso';
 
@@ -47,7 +47,6 @@ console.error = (...args) => {
 function App() {
   const { user, logout } = useAuth();
   
-  // 🚀 CORREGIDO: El estado inicial ahora arranca en el 'hub' de la intranet, no en 'casos'
   const [view, setView] = useState('hub'); 
   const [casoSeleccionado, setCasoSeleccionado] = useState(null);
   
@@ -55,7 +54,6 @@ function App() {
   const [loadingRole, setLoadingRole] = useState(true);
   const [institutionalError, setInstitutionalError] = useState('');
 
-  // Funciones de alcance global
   const handleSelectCaso = (caso) => {
     setView('detalle_caso');
     setCasoSeleccionado(caso);
@@ -73,7 +71,6 @@ function App() {
         return;
       }
 
-      // 🚀 CORREGIDO: Al detectar inicio de sesión, mandamos al usuario directo al Hub principal
       setView('hub');
       setCasoSeleccionado(null);
 
@@ -82,6 +79,14 @@ function App() {
       if (emailLimpio === 'webmaster@iiresodh.org') {
         setUserRole('Superadmin');
         setInstitutionalError('');
+        setLoadingRole(false);
+        return;
+      }
+
+      // 🚀 EXCLUSIÓN ABSOLUTA: Si no pertenece al dominio institucional, fuera inmediatamente
+      if (!emailLimpio.endsWith('@iiresodh.org')) {
+        await logout();
+        setInstitutionalError('Acceso denegado: Solo se permiten cuentas institucionales de IIRESODH.');
         setLoadingRole(false);
         return;
       }
@@ -95,13 +100,14 @@ function App() {
           setUserRole(userDoc.rol || 'Abogado/a');
           setInstitutionalError('');
         } else {
-          await logout();
-          setInstitutionalError('Acceso denegado: No tiene acceso a esta plataforma.');
+          // 🚀 FLEXIBILIDAD ESTRUCTURAL: Es @iiresodh.org pero no está registrado en Litigios.
+          // Le damos acceso a la intranet general bajo el rol de 'Invitado'
+          setUserRole('Invitado');
+          setInstitutionalError('');
         }
       } catch (err) {
-        await logout();
-        setUserRole('Abogado/a');
-        setInstitutionalError('Acceso denegado: No tiene acceso a esta plataforma.');
+        setUserRole('Invitado');
+        setInstitutionalError('');
       } finally {
         setLoadingRole(false);
       }
@@ -111,14 +117,17 @@ function App() {
     resolverRolYPermisos();
   }, [user]);
 
-  // Protección de seguridad perimetral para vistas administrativas
+  // Protección de seguridad perimetral para vistas administrativas e internas
   useEffect(() => {
     if (!loadingRole) {
-      // 🚀 CORREGIDO: Si hay un intento de intrusión o desajuste de rol, redirige al 'hub' global
       if (view === 'usuarios' && userRole !== 'Superadmin' && userRole !== 'Admin') {
         setView('hub');
       }
       if (view === 'logs' && userRole !== 'Superadmin') {
+        setView('hub');
+      }
+      // 🚀 BLINDAJE DE SEGURIDAD: Un invitado no puede entrar a la fuerza a los casos
+      if ((view === 'casos' || view === 'detalle_caso') && userRole === 'Invitado') {
         setView('hub');
       }
     }
@@ -148,17 +157,17 @@ function App() {
   if (vistaSegura === 'logs' && userRole !== 'Superadmin') {
     vistaSegura = 'hub';
   }
+  if ((vistaSegura === 'casos' || vistaSegura === 'detalle_caso') && userRole === 'Invitado') {
+    vistaSegura = 'hub';
+  }
 
   return (
-    /* 🚀 CORREGIDO: Pasamos "vistaSegura" limpia al Layout para que pueda evaluar "currentView === 'hub'" y esconder la Sidebar */
     <Layout currentView={vistaSegura} setView={setView} userRole={userRole}>
       
-      {/* 🚀 AGREGADO: Renderizado de la vista de bienvenida e intercambio de módulos */}
       {vistaSegura === 'hub' && (
         <HubIntranet setView={setView} userRole={userRole} />
       )}
 
-      {/* Módulo de Litigios */}
       {vistaSegura === 'casos' && (
         <Casos onSelectCaso={handleSelectCaso} userRole={userRole} currentUserEmail={user.email} />
       )}
@@ -167,7 +176,6 @@ function App() {
         <DetalleCaso caso={casoSeleccionado} onVolver={handleVolverCasos} currentUserEmail={user.email} userRole={userRole} />
       )}
 
-      {/* Módulos de Administración Global */}
       {vistaSegura === 'usuarios' && (
         <UsuariosAutorizados currentUserEmail={user.email} userRole={userRole} />
       )}
