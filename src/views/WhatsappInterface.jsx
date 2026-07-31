@@ -97,7 +97,7 @@ export default function WhatsappInterface({ onVolver }) {
       {/* Alerta de Configuración (puedes quitarla luego) */}
       <Alert severity="info" sx={{ borderRadius: 0, borderBottom: '1px solid #e2e8f0' }}>
         <AlertTitle>Modo de Desarrollo</AlertTitle>
-        Asegúrate de reemplazar la variable <strong>BACKEND_URL</strong> en el código con la URL real de tu Firebase Function cuando esté desplegada.
+        Reemplazar la variable <strong>BACKEND_URL</strong> en el código con la URL de la Firebase Function cuando esté desplegada.
       </Alert>
 
       {/* Alerta de Error de Envío */}
@@ -117,7 +117,7 @@ export default function WhatsappInterface({ onVolver }) {
                 <ArrowLeft size={20} />
               </IconButton>
               <Avatar sx={{ width: 40, height: 40, bgcolor: '#25D366' }}>W</Avatar>
-              <Typography variant="subtitle1" fontWeight="bold">Chats (API)</Typography>
+              <Typography variant="subtitle1" fontWeight="bold">Chats IIRESODH</Typography>
             </Box>
             <Box>
               <IconButton size="small"><Settings size={20} /></IconButton>
