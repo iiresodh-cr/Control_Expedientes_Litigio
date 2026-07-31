@@ -10,6 +10,7 @@ import Layout from './components/Layout';
 import HubIntranet from './views/HubIntranet'; 
 import UsuariosAutorizados from './views/UsuariosAutorizados';
 import LogsAuditoria from './views/LogsAuditoria';
+import WhatsappInterface from './views/WhatsappInterface';
 
 // Vistas del Módulo de Litigio
 import Casos from './views/litigio/Casos';
@@ -127,7 +128,7 @@ function App() {
         setView('hub');
       }
       // 🚀 BLINDAJE DE SEGURIDAD: Un invitado no puede entrar a la fuerza a los casos
-      if ((view === 'casos' || view === 'detalle_caso') && userRole === 'Invitado') {
+      if ((view === 'casos' || view === 'detalle_caso' || view === 'whatsapp') && userRole === 'Invitado') {
         setView('hub');
       }
     }
@@ -157,7 +158,7 @@ function App() {
   if (vistaSegura === 'logs' && userRole !== 'Superadmin') {
     vistaSegura = 'hub';
   }
-  if ((vistaSegura === 'casos' || vistaSegura === 'detalle_caso') && userRole === 'Invitado') {
+  if ((vistaSegura === 'casos' || vistaSegura === 'detalle_caso' || vistaSegura === 'whatsapp') && userRole === 'Invitado') {
     vistaSegura = 'hub';
   }
 
@@ -182,6 +183,10 @@ function App() {
 
       {vistaSegura === 'logs' && (
         <LogsAuditoria currentUserEmail={user.email} userRole={userRole} />
+      )}
+
+      {vistaSegura === 'whatsapp' && (
+        <WhatsappInterface onVolver={() => setView('hub')} />
       )}
     </Layout>
   );

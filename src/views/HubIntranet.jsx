@@ -1,13 +1,14 @@
 // src/views/HubIntranet.jsx
 import React from 'react';
 import { Box, Typography, Card, CardContent, Button, Divider } from '@mui/material';
-import { Scale, Users, ShieldCheck, FileSpreadsheet, Activity, Globe } from 'lucide-react'; // 🚀 AGREGADO: Icono Globe
+import { Scale, Users, ShieldCheck, FileSpreadsheet, Activity, Globe, MessageCircle } from 'lucide-react'; // 🚀 AGREGADO: Iconos Globe y MessageCircle
 
 export default function HubIntranet({ setView, userRole }) {
   
   // CONTROL PERIMETRAL: Roles autorizados para cada sección
   const tieneAccesoLitigio = userRole !== 'Invitado';
   const tieneAccesoWeb = userRole === 'Superadmin'; // 🚀 AGREGADO: Llave exclusiva para el Superadmin
+  const tieneAccesoWhatsapp = userRole !== 'Invitado'; // O la lógica de acceso deseada
 
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', p: 2, mt: 2 }}>
@@ -29,6 +30,42 @@ export default function HubIntranet({ setView, userRole }) {
         mb: 6 
       }}>
         
+        {/* 🚀 MÓDULO 0: WHATSAPP */}
+        <Card sx={{ 
+          borderRadius: 3, 
+          border: '1px solid #e2e8f0', 
+          boxShadow: 'none', 
+          transition: 'all 0.2s',
+          ...(!tieneAccesoWhatsapp && { opacity: 0.65, bgcolor: '#f8fafc' }),
+          '&:hover': tieneAccesoWhatsapp ? { borderColor: '#25D366', bgcolor: '#f8fafc' } : {}
+        }}>
+          <CardContent sx={{ p: 3, textAlign: 'center' }}>
+            <MessageCircle size={42} style={{ color: tieneAccesoWhatsapp ? '#25D366' : '#94a3b8', marginBottom: '16px' }} />
+            <Typography variant="h6" fontWeight="bold" gutterBottom color={tieneAccesoWhatsapp ? 'text.primary' : 'text.secondary'}>
+              WhatsApp
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ minHeight: 48, mb: 2 }}>
+              Comunicación oficial vía WhatsApp Business API con clientes y prospectos.
+            </Typography>
+            
+            <Button 
+              variant={tieneAccesoWhatsapp ? "contained" : "outlined"} 
+              fullWidth 
+              disabled={!tieneAccesoWhatsapp}
+              onClick={() => setView('whatsapp')} 
+              sx={{ 
+                textTransform: 'none', 
+                fontWeight: 'bold', 
+                borderRadius: 2,
+                ...(tieneAccesoWhatsapp && { bgcolor: '#25D366', color: '#fff', '&:hover': { bgcolor: '#20bd5a' } }),
+                ...(!tieneAccesoWhatsapp && { color: 'error.main', borderColor: 'error.light' })
+              }}
+            >
+              {tieneAccesoWhatsapp ? "Abrir WhatsApp" : "Acceso Restringido"}
+            </Button>
+          </CardContent>
+        </Card>
+
         {/* MÓDULO 1: LITIGIOS */}
         <Card sx={{ 
           borderRadius: 3, 
