@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { 
   Box, 
   Typography, 
-  Paper, 
   List, 
   ListItem, 
   ListItemAvatar, 
@@ -11,40 +10,102 @@ import {
   Divider, 
   TextField, 
   IconButton, 
-  Button,
-  AppBar,
-  Toolbar,
   Alert,
-  AlertTitle
+  AlertTitle,
+  CircularProgress // Añadido para el estado de carga
 } from '@mui/material';
 import { Send, Search, MoreVertical, Settings, ArrowLeft } from 'lucide-react';
 
 export default function WhatsappInterface({ onVolver }) {
   const [selectedChat, setSelectedChat] = useState(null);
   const [mensajeTexto, setMensajeTexto] = useState('');
+  const [isSending, setIsSending] = useState(false); // Estado para controlar el envío
+  const [errorEnvio, setErrorEnvio] = useState(null); // Estado para mostrar errores
 
-  // Contactos de prueba
-  const mockContacts = [
+  // Mantenemos los contactos de prueba, pero agregamos un array de mensajes para el chat actual
+  const [mockContacts, setMockContacts] = useState([
     { id: 1, name: '+506 8888 8888', lastMessage: 'Esperando conexión con la API...', time: '10:30', unread: 0 },
     { id: 2, name: 'Cliente Potencial', lastMessage: '¿Tienen oficinas en San José?', time: 'Ayer', unread: 1 }
-  ];
+  ]);
 
-  const handleSendMessage = () => {
-    if (!mensajeTexto.trim()) return;
-    // Aquí iría la lógica de envío mediante la API
-    console.log("Enviando mensaje vía API:", mensajeTexto);
-    setMensajeTexto('');
-    // TODO: Integrar llamada a la API de WhatsApp Business
+  // Simulamos un historial de mensajes para el chat seleccionado
+  const [mensajesChat, setMensajesChat] = useState([
+    { id: 'm1', texto: '¿Tienen oficinas en San José?', esMio: false, time: '10:30 AM' }
+  ]);
+
+  // IMPORTANTE: Esta URL la cambiarás por la que te dé Firebase al hacer deploy
+  const BACKEND_URL = 'https://us-central1-tu-proyecto-id.cloudfunctions.net/enviar_mensaje';
+
+  const handleSendMessage = async () => {
+    if (!mensajeTexto.trim() || !selectedChat) return;
+    
+    const textoAEnviar = mensajeTexto;
+    setMensajeTexto(''); 
+    setIsSending(true);
+    setErrorEnvio(null);
+
+    try {
+      // 1. Llamada real a tu Firebase Function
+      const response = await fetch(BACKEND_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          telefono: selectedChat.name, // El número al que enviaremos
+          mensaje: textoAEnviar
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Error del servidor: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("Respuesta de Meta:", data);
+
+      // 2. Si es exitoso, actualizamos la interfaz agregando nuestro mensaje al chat
+      const nuevoMensaje = {
+        id: `m_${Date.now()}`,
+        texto: textoAEnviar,
+        esMio: true, // Para alinearlo a la derecha
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      
+      setMensajesChat(prev => [...prev, nuevoMensaje]);
+
+      // Opcional: Actualizar el "lastMessage" en la lista de contactos
+      setMockContacts(prev => prev.map(contact => 
+        contact.id === selectedChat.id 
+          ? { ...contact, lastMessage: textoAEnviar, time: 'Ahora' } 
+          : contact
+      ));
+
+    } catch (error) {
+      console.error("Error enviando mensaje:", error);
+      setErrorEnvio("No se pudo enviar el mensaje. Revisa tu conexión o la URL del backend.");
+      // Devolvemos el texto al input para que el usuario no lo pierda
+      setMensajeTexto(textoAEnviar); 
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
     <Box sx={{ height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', bgcolor: '#f0f2f5', borderRadius: 2, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
       
-      {/* Alerta de Configuración Pendiente */}
-      <Alert severity="warning" sx={{ borderRadius: 0, borderBottom: '1px solid #e2e8f0' }}>
-        <AlertTitle>Configuración de API Pendiente</AlertTitle>
-        La integración con WhatsApp Business API requiere configuración. Por favor, introduzca su <strong>Token de Acceso</strong>, <strong>ID del Número de Teléfono</strong> y configure los Webhooks en el panel de desarrolladores de Meta para activar la mensajería en tiempo real.
+      {/* Alerta de Configuración (puedes quitarla luego) */}
+      <Alert severity="info" sx={{ borderRadius: 0, borderBottom: '1px solid #e2e8f0' }}>
+        <AlertTitle>Modo de Desarrollo</AlertTitle>
+        Asegúrate de reemplazar la variable <strong>BACKEND_URL</strong> en el código con la URL real de tu Firebase Function cuando esté desplegada.
       </Alert>
+
+      {/* Alerta de Error de Envío */}
+      {errorEnvio && (
+        <Alert severity="error" onClose={() => setErrorEnvio(null)} sx={{ borderRadius: 0 }}>
+          {errorEnvio}
+        </Alert>
+      )}
 
       <Box sx={{ display: 'flex', flexGrow: 1, overflow: 'hidden' }}>
         {/* Sidebar de Chats */}
@@ -69,7 +130,7 @@ export default function WhatsappInterface({ onVolver }) {
             <Box sx={{ display: 'flex', alignItems: 'center', bgcolor: '#f0f2f5', borderRadius: 2, px: 2, py: 0.5 }}>
               <Search size={18} color="#8696a0" />
               <TextField 
-                placeholder="Busca un chat o inicia uno nuevo"
+                placeholder="Busca un chat o inicia uno"
                 variant="standard"
                 fullWidth
                 InputProps={{ disableUnderline: true, sx: { ml: 1, fontSize: '14px' } }}
@@ -124,11 +185,24 @@ export default function WhatsappInterface({ onVolver }) {
 
               {/* Mensajes del Chat */}
               <Box sx={{ flexGrow: 1, overflowY: 'auto', p: 3, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {/* Mensaje de prueba recibido */}
-                <Box sx={{ alignSelf: 'flex-start', bgcolor: 'white', p: 1.5, borderRadius: 2, maxWidth: '70%', boxShadow: '0 1px 0.5px rgba(11,20,26,.13)' }}>
-                  <Typography variant="body2">{selectedChat.lastMessage}</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'right', mt: 0.5, fontSize: '10px' }}>{selectedChat.time}</Typography>
-                </Box>
+                {mensajesChat.map((msg) => (
+                  <Box 
+                    key={msg.id} 
+                    sx={{ 
+                      alignSelf: msg.esMio ? 'flex-end' : 'flex-start', 
+                      bgcolor: msg.esMio ? '#d9fdd3' : 'white', // Color verde si es mío, blanco si es recibido
+                      p: 1.5, 
+                      borderRadius: 2, 
+                      maxWidth: '70%', 
+                      boxShadow: '0 1px 0.5px rgba(11,20,26,.13)' 
+                    }}
+                  >
+                    <Typography variant="body2">{msg.texto}</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'right', mt: 0.5, fontSize: '10px' }}>
+                      {msg.time}
+                    </Typography>
+                  </Box>
+                ))}
               </Box>
 
               {/* Input de Mensaje */}
@@ -141,15 +215,20 @@ export default function WhatsappInterface({ onVolver }) {
                   value={mensajeTexto}
                   onChange={(e) => setMensajeTexto(e.target.value)}
                   onKeyPress={(e) => { if (e.key === 'Enter') handleSendMessage(); }}
+                  disabled={isSending} // Deshabilitar mientras envía
                   sx={{ bgcolor: 'white', borderRadius: 2, '& fieldset': { border: 'none' } }}
                 />
                 <IconButton 
                   color="primary" 
                   onClick={handleSendMessage}
-                  disabled={!mensajeTexto.trim()}
-                  sx={{ bgcolor: mensajeTexto.trim() ? '#25D366' : 'transparent', color: mensajeTexto.trim() ? 'white' : '#8696a0', '&:hover': { bgcolor: mensajeTexto.trim() ? '#20bd5a' : 'transparent' } }}
+                  disabled={!mensajeTexto.trim() || isSending}
+                  sx={{ 
+                    bgcolor: mensajeTexto.trim() ? '#25D366' : 'transparent', 
+                    color: mensajeTexto.trim() ? 'white' : '#8696a0', 
+                    '&:hover': { bgcolor: mensajeTexto.trim() ? '#20bd5a' : 'transparent' } 
+                  }}
                 >
-                  <Send size={20} />
+                  {isSending ? <CircularProgress size={20} color="inherit" /> : <Send size={20} />}
                 </IconButton>
               </Box>
             </>
@@ -162,7 +241,7 @@ export default function WhatsappInterface({ onVolver }) {
                 WhatsApp Business API
               </Typography>
               <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 400 }}>
-                Selecciona un chat para comenzar a enviar mensajes o configura la integración en el panel de administrador.
+                Selecciona un chat para comenzar a enviar mensajes.
               </Typography>
             </Box>
           )}
